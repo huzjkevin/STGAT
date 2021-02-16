@@ -24,7 +24,6 @@ from utils import (
 parser = argparse.ArgumentParser()
 parser.add_argument("--log_dir", default="./", help="Directory containing logging file")
 
-# parser.add_argument("--dataset_name", default="nuscenes", type=str)
 parser.add_argument("--dataset_name", default="zara2", type=str)
 parser.add_argument("--delim", default="\t")
 parser.add_argument("--loader_num_workers", default=4, type=int)
@@ -194,7 +193,7 @@ def main(args):
                     "optimizer": optimizer.state_dict(),
                 },
                 is_best,
-                f"./checkpoint/checkpoint{epoch}.pth.tar",
+                f"./checkpoint{args.dataset_name}/checkpoint{epoch}.pth.tar",
             )
     writer.close()
 
@@ -317,7 +316,7 @@ def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
 if __name__ == "__main__":
     args = parser.parse_args()
     utils.set_logger(os.path.join(args.log_dir, "train.log"))
-    checkpoint_dir = "./checkpoint"
+    checkpoint_dir = f"./checkpoint_{args.dataset_name}"
     if os.path.exists(checkpoint_dir) is False:
         os.mkdir(checkpoint_dir)
     main(args)
