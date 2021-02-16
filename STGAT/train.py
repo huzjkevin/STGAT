@@ -24,6 +24,7 @@ from utils import (
 parser = argparse.ArgumentParser()
 parser.add_argument("--log_dir", default="./", help="Directory containing logging file")
 
+# parser.add_argument("--dataset_name", default="nuscenes", type=str)
 parser.add_argument("--dataset_name", default="zara2", type=str)
 parser.add_argument("--delim", default="\t")
 parser.add_argument("--loader_num_workers", default=4, type=int)

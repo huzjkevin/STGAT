@@ -3,3 +3,9 @@
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+*cache*
+checkpoint/
+*.tar
+*.pth
+runs/
+*.log
