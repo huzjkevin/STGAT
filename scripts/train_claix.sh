@@ -26,7 +26,7 @@ source $HOME/.zshrc
 conda activate kevin
 
 WS_DIR="$HOME/Projects/STGAT"
-SCRIPT="train.py"
+SCRIPT="STGAT/train.py"
 
 cd ${WS_DIR}
 
