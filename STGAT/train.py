@@ -193,7 +193,7 @@ def main(args):
                     "optimizer": optimizer.state_dict(),
                 },
                 is_best,
-                f"./checkpoint{args.dataset_name}/checkpoint{epoch}.pth.tar",
+                f"./checkpoint_{args.dataset_name}/checkpoint{epoch}.pth.tar",
             )
     writer.close()
 
