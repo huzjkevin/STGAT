@@ -240,7 +240,7 @@ def plot_trajectory(args, loader, generator):
 
                 #plt.axis("off")
                 plt.savefig(
-                    "./traj_fig/pic_{}.png".format(pic_cnt)
+                    "./traj_fig_{}/pic_{}.png".format(args.dataset_name, pic_cnt)
                 )
                 plt.close()
                 pic_cnt += 1
@@ -260,5 +260,5 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    os.mkdir("./traj_fig")
+    os.mkdir(f"./traj_fig_{args.dataset_name}")
     main(args)

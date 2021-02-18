@@ -310,12 +310,13 @@ def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
     if is_best:
         torch.save(state, filename)
         logging.info("-------------- lower ade ----------------")
-        shutil.copyfile(filename, "model_best.pth.tar")
+        ckpt_dir = os.path.split(filename)[0]
+        shutil.copyfile(filename, ckpt_dir + "model_best.pth.tar")
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    utils.set_logger(os.path.join(args.log_dir, "train.log"))
+    utils.set_logger(os.path.join(args.log_dir, f"train_{args.dataset_name}.log"))
     checkpoint_dir = f"./checkpoint_{args.dataset_name}"
     if os.path.exists(checkpoint_dir) is False:
         os.mkdir(checkpoint_dir)

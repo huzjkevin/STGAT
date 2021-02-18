@@ -9,3 +9,4 @@ checkpoint/
 *.pth
 runs/
 *.log
+traj_fig*
