@@ -311,7 +311,7 @@ def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
         torch.save(state, filename)
         logging.info("-------------- lower ade ----------------")
         ckpt_dir = os.path.split(filename)[0]
-        shutil.copyfile(filename, ckpt_dir + "model_best.pth.tar")
+        shutil.copyfile(filename, ckpt_dir + "_model_best.pth.tar")
 
 
 if __name__ == "__main__":

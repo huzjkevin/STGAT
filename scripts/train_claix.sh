@@ -32,4 +32,4 @@ cd ${WS_DIR}
 
 # wandb on
 
-srun --unbuffered python ${SCRIPT} --dataset_name zara2
+srun --unbuffered python ${SCRIPT} --dataset_name nuscenes_bicycle
