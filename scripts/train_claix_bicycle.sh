@@ -1,6 +1,6 @@
 #!/usr/local_rwth/bin/zsh
 
-#SBATCH --job-name=train_stgat
+#SBATCH --job-name=train_stgat_full_nusc_bicycle
 
 #SBATCH --output=/home/kq708907/slurm_logs/%J_%x.log
 
@@ -32,4 +32,4 @@ cd ${WS_DIR}
 
 # wandb on
 
-srun --unbuffered python ${SCRIPT} --dataset_name nuscenes_bicycle
+srun --unbuffered python ${SCRIPT} --dataset_name trajectory_bicycle

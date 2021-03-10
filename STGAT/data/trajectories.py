@@ -129,6 +129,8 @@ class TrajectoryDataset(Dataset):
             num_sequences = int(math.ceil((len(frames) - self.seq_len + 1) / skip))
 
             for idx in range(0, num_sequences * self.skip + 1, skip):
+                if path == "/home/kq708907/Projects/STGAT/STGAT/datasets/trajectory_vehicle/train/traj_scene-0246.txt" and idx == 14:
+                    print("debug")
                 # curr_seq_data is a 20 length sequence
                 curr_seq_data = np.concatenate(
                     frame_data[idx : idx + self.seq_len], axis=0
@@ -141,6 +143,7 @@ class TrajectoryDataset(Dataset):
                 _non_linear_ped = []
 
                 for _, ped_id in enumerate(peds_in_curr_seq):
+                    # a = curr_seq_data[:, 1] == ped_id
                     curr_ped_seq = curr_seq_data[curr_seq_data[:, 1] == ped_id, :]
                     curr_ped_seq = np.around(curr_ped_seq, decimals=4)
                     pad_front = frames.index(curr_ped_seq[0, 0]) - idx

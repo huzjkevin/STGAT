@@ -10,3 +10,4 @@ checkpoint/
 runs/
 *.log
 traj_fig*
+traj*
