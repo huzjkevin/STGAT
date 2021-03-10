@@ -11,3 +11,4 @@ runs/
 *.log
 traj_fig*
 traj*
+**/*.txt
