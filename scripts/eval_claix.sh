@@ -34,8 +34,9 @@ cd ${WS_DIR}
 
 # wandb on
 
-srun -n 1 python ${SCRIPT} --dataset_name trajectory_human --resume ./checkpoint_trajectory_human_model_best.pth.tar
-srun -n 1 python ${SCRIPT} --dataset_name trajectory_vehicle --resume ./checkpoint_trajectory_vehicle_model_best.pth.tar
-srun -n 1 python ${SCRIPT} --dataset_name trajectory_bicycle --resume ./checkpoint_trajectory_bicycle_model_best.pth.tar
+# srun -n 1 python ${SCRIPT} --dataset_name trajectory_human --resume ./checkpoint_trajectory_human_model_best.pth.tar
+# srun -n 1 python ${SCRIPT} --dataset_name trajectory_vehicle --resume ./checkpoint_trajectory_vehicle_model_best.pth.tar
+# srun -n 1 python ${SCRIPT} --dataset_name trajectory_bicycle --resume ./checkpoint_trajectory_bicycle_model_best.pth.tar
+srun -n 1 python ${SCRIPT} --dataset_name trajectory_combined --resume ./checkpoint_trajectory_combined_model_best.pth.tar
 
 wait
