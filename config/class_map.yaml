@@ -1,0 +1,35 @@
+cls_name_idx:
+  human: 0
+  vehicle: 1
+  bicycle: 2
+
+cls_idx_name:
+  0: human 
+  1: vehicle 
+  2: bicycle 
+
+cls_name_map:
+  movable_object.trafficcone: movable_object
+  human.pedestrian.construction_worker: human
+  movable_object.pushable_pullable: movable_object
+  vehicle.truck: vehicle
+  vehicle.car: vehicle
+  vehicle.construction: vehicle
+  human.pedestrian.adult: human
+  movable_object.barrier: movable_object
+  vehicle.motorcycle: motorcycle
+  movable_object.debris: movable_object
+  vehicle.bicycle: bicycle
+  vehicle.bus.rigid: vehicle
+  static_object.bicycle_rack: static_object
+  vehicle.trailer: vehicle
+  human.pedestrian.personal_mobility: human
+  human.pedestrian.child: human
+  human.pedestrian.stroller: human
+  vehicle.bus.bendy: vehicle
+  human.pedestrian.police_officer: human
+  animal: animal
+  human.pedestrian.wheelchair: human
+  vehicle.emergency.ambulance: vehicle
+  vehicle.emergency.police: vehicle
+  

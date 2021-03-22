@@ -117,13 +117,21 @@ def l2_loss(pred_traj, pred_traj_gt, loss_mask, random=0, mode="average"):
     seq_len, batch, _ = pred_traj.size()
     # equation below , the first part do noing, can be delete
 
-    loss = (pred_traj_gt.permute(1, 0, 2) - pred_traj.permute(1, 0, 2)) ** 2
+    # loss = (pred_traj_gt.permute(1, 0, 2) - pred_traj.permute(1, 0, 2)) ** 2
+    loss = (pred_traj_gt.permute(1, 0, 2)[:, :, 0:2] - pred_traj.permute(1, 0, 2)) ** 2
+
     if mode == "sum":
         return torch.sum(loss)
     elif mode == "average":
         return torch.sum(loss) / torch.numel(loss_mask.data)
     elif mode == "raw":
         return loss.sum(dim=2).sum(dim=1)
+
+def cross_entropy(pred_cls, target_cls):
+    loss_fn = torch.nn.CrossEntropyLoss()
+    loss = loss_fn(pred_cls, target_cls)
+
+    return loss
 
 
 def displacement_error(pred_traj, pred_traj_gt, consider_ped=None, mode="sum"):

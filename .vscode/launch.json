@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": ["--dataset_name" "trajectory_bicycle"]
+            "args": ["--dataset_name" "trajectory_combined" "--traj_lstm_input_size" "3"]
         }
     ]
 }

@@ -161,9 +161,16 @@ class TrajectoryGenerator(nn.Module):
         self.noise_dim = noise_dim
         self.noise_type = noise_type
 
+        # self.pred_lstm_model = nn.LSTMCell(
+        #     traj_lstm_input_size, self.pred_lstm_hidden_size
+        # )
+
         self.pred_lstm_model = nn.LSTMCell(
-            traj_lstm_input_size, self.pred_lstm_hidden_size
+            traj_lstm_input_size-1, self.pred_lstm_hidden_size
         )
+
+        # TEST: add classification layer
+        self.cls_model = self.cls_fc(self.pred_lstm_hidden_size, 3) # Currently 3 classes: human, vehicle, bicycle
 
     def init_hidden_traj_lstm(self, batch):
         return (
@@ -191,6 +198,14 @@ class TrajectoryGenerator(nn.Module):
             _list.append(torch.cat([_input[start:end], _to_cat], dim=1))
         decoder_h = torch.cat(_list, dim=0)
         return decoder_h
+
+    def cls_fc(self, in_channel, out_channel=3):
+        return nn.Sequential(
+            nn.Linear(in_channel, in_channel // 2),
+            # nn.BatchNorm1d(in_channel // 2),
+            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.Linear(in_channel // 2, out_channel)
+        )
 
     def forward(
         self,
@@ -256,8 +271,13 @@ class TrajectoryGenerator(nn.Module):
             pred_lstm_hidden = self.add_noise(
                 encoded_before_noise_hidden, seq_start_end
             )
+
+            # TEST: perform classification here
+            pred_cls = self.cls_model(pred_lstm_hidden)
+
             pred_lstm_c_t = torch.zeros_like(pred_lstm_hidden).cuda()
-            output = obs_traj_rel[self.obs_len-1]
+            # output = obs_traj_rel[self.obs_len - 1]
+            output = obs_traj_rel[self.obs_len - 1][:, 0:2] # TEST: for adding class info
             if self.training:
                 for i, input_t in enumerate(
                     obs_traj_rel[-self.pred_len :].chunk(
@@ -265,7 +285,8 @@ class TrajectoryGenerator(nn.Module):
                     )
                 ):
                     teacher_force = random.random() < teacher_forcing_ratio
-                    input_t = input_t if teacher_force else output.unsqueeze(0)
+                    # input_t = input_t if teacher_force else output.unsqueeze(0)
+                    input_t = input_t if teacher_force else output.unsqueeze(0) 
                     pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
                         input_t.squeeze(0), (pred_lstm_hidden, pred_lstm_c_t)
                     )
@@ -280,4 +301,4 @@ class TrajectoryGenerator(nn.Module):
                     output = self.pred_hidden2pos(pred_lstm_hidden)
                     pred_traj_rel += [output]
                 outputs = torch.stack(pred_traj_rel)
-            return outputs
+            return outputs, pred_cls

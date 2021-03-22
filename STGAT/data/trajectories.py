@@ -129,15 +129,19 @@ class TrajectoryDataset(Dataset):
             num_sequences = int(math.ceil((len(frames) - self.seq_len + 1) / skip))
 
             for idx in range(0, num_sequences * self.skip + 1, skip):
-                if path == "/home/kq708907/Projects/STGAT/STGAT/datasets/trajectory_vehicle/train/traj_scene-0246.txt" and idx == 14:
-                    print("debug")
                 # curr_seq_data is a 20 length sequence
                 curr_seq_data = np.concatenate(
                     frame_data[idx : idx + self.seq_len], axis=0
                 )
                 peds_in_curr_seq = np.unique(curr_seq_data[:, 1])
-                curr_seq_rel = np.zeros((len(peds_in_curr_seq), 2, self.seq_len))
-                curr_seq = np.zeros((len(peds_in_curr_seq), 2, self.seq_len))
+                # TEST: including class info
+                if curr_seq_data.shape[1] == 5:
+                    curr_seq_rel = np.zeros((len(peds_in_curr_seq), 3, self.seq_len))
+                    curr_seq = np.zeros((len(peds_in_curr_seq), 3, self.seq_len))
+                else:
+                    curr_seq_rel = np.zeros((len(peds_in_curr_seq), 2, self.seq_len))
+                    curr_seq = np.zeros((len(peds_in_curr_seq), 2, self.seq_len))
+
                 curr_loss_mask = np.zeros((len(peds_in_curr_seq), self.seq_len))
                 num_peds_considered = 0
                 _non_linear_ped = []
@@ -155,7 +159,7 @@ class TrajectoryDataset(Dataset):
                     curr_ped_seq = curr_ped_seq
                     # Make coordinates relative
                     rel_curr_ped_seq = np.zeros(curr_ped_seq.shape)
-                    rel_curr_ped_seq[:, 1:] = curr_ped_seq[:, 1:] - curr_ped_seq[:, :-1]
+                    rel_curr_ped_seq[:2, 1:] = curr_ped_seq[:2, 1:] - curr_ped_seq[:2, :-1] # TEST: we add class info here
                     _idx = num_peds_considered
                     curr_seq[_idx, :, pad_front:pad_end] = curr_ped_seq
                     curr_seq_rel[_idx, :, pad_front:pad_end] = rel_curr_ped_seq
