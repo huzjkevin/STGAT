@@ -166,7 +166,7 @@ class TrajectoryGenerator(nn.Module):
         )
 
         # TEST: add classification layer
-        self.cls_model = self.cls_fc(self.pred_lstm_hidden_size, 3) # Currently 3 classes: human, vehicle, bicycle
+        self.cls_model = self.cls_fc(self.traj_lstm_hidden_size, 3) # Currently 3 classes: human, vehicle, bicycle
 
     def init_hidden_traj_lstm(self, batch):
         return (
@@ -227,9 +227,14 @@ class TrajectoryGenerator(nn.Module):
             )
             if training_step == 1:
                 output = self.traj_hidden2pos(traj_lstm_h_t)
+                traj_lstm_hidden_states += [traj_lstm_h_t] # TEST: class info
                 pred_traj_rel += [output]
             else:
                 traj_lstm_hidden_states += [traj_lstm_h_t]
+            
+        # TEST: perform classification here
+        pred_cls = self.cls_model(traj_lstm_hidden_states[-1])
+
         if training_step == 2:
             graph_lstm_input = self.gatencoder(
                 torch.stack(traj_lstm_hidden_states), seq_start_end
@@ -259,7 +264,8 @@ class TrajectoryGenerator(nn.Module):
                 graph_lstm_hidden_states += [graph_lstm_h_t]
 
         if training_step == 1 or training_step == 2:
-            return torch.stack(pred_traj_rel)
+            # return torch.stack(pred_traj_rel)
+            return torch.stack(pred_traj_rel), pred_cls # TEST: class info
         else:
             encoded_before_noise_hidden = torch.cat(
                 (traj_lstm_hidden_states[-1], graph_lstm_hidden_states[-1]), dim=1
@@ -267,9 +273,6 @@ class TrajectoryGenerator(nn.Module):
             pred_lstm_hidden = self.add_noise(
                 encoded_before_noise_hidden, seq_start_end
             )
-
-            # TEST: perform classification here
-            pred_cls = self.cls_model(pred_lstm_hidden)
 
             pred_lstm_c_t = torch.zeros_like(pred_lstm_hidden).cuda()
             output = obs_traj_rel[self.obs_len - 1]
@@ -297,4 +300,5 @@ class TrajectoryGenerator(nn.Module):
                     output = self.pred_hidden2pos(pred_lstm_hidden)
                     pred_traj_rel += [output]
                 outputs = torch.stack(pred_traj_rel)
-            return outputs, pred_cls
+            # return outputs
+            return outputs, pred_cls # TEST: class info

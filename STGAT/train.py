@@ -18,7 +18,7 @@ from utils import (
     get_dset_path,
     int_tuple,
     l2_loss,
-    cross_entropy, # Test: classification loss
+    cross_entropy,  # Test: classification loss
     relative_to_abs,
 )
 
@@ -171,12 +171,12 @@ def main(args):
 
     training_step = 1
     for epoch in range(args.start_epoch, args.num_epochs + 1):
-        if epoch < 150:
+        if epoch < 15:
             training_step = 1
-        elif epoch < 250:
+        elif epoch < 25:
             training_step = 2
         else:
-            if epoch == 250:
+            if epoch == 25:
                 for param_group in optimizer.param_groups:
                     param_group["lr"] = 5e-3
             training_step = 3
@@ -219,7 +219,7 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
 
         # TEST: extract class info
         target_cls = pred_traj_gt[0, :, 2].squeeze()
-        target_cls = target_cls.to(torch.long) 
+        target_cls = target_cls.to(torch.long)
         obs_traj = obs_traj[:, :, 0:2]
         pred_traj_gt = pred_traj_gt[:, :, 0:2]
         obs_traj_rel = obs_traj_rel[:, :, 0:2]
@@ -233,24 +233,36 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
 
         if training_step == 1 or training_step == 2:
             model_input = obs_traj_rel
-            pred_traj_fake_rel = model(
+            # pred_traj_fake_rel = model(
+            #     model_input, obs_traj, seq_start_end, 1, training_step
+            # )
+
+            # TEST: class info
+            pred_traj_fake_rel, pred_cls = model(
                 model_input, obs_traj, seq_start_end, 1, training_step
             )
+
             l2_loss_rel.append(
                 l2_loss(pred_traj_fake_rel, model_input, loss_mask, mode="raw")
+                + cross_entropy(pred_cls, target_cls)  # TEST: add classification loss
             )
         else:
             model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
             for _ in range(args.best_k):
                 # pred_traj_fake_rel = model(model_input, obs_traj, seq_start_end, 0)
-                pred_traj_fake_rel, pred_cls = model(model_input, obs_traj, seq_start_end, 0) # TEST: pred additionally class info
+                pred_traj_fake_rel, pred_cls = model(
+                    model_input, obs_traj, seq_start_end, 0
+                )  # TEST: pred additionally class info
                 l2_loss_rel.append(
                     l2_loss(
                         pred_traj_fake_rel,
                         model_input[-args.pred_len :],
                         loss_mask,
                         mode="raw",
-                    ) + cross_entropy(pred_cls, target_cls) # TEST: add classification loss
+                    )
+                    + cross_entropy(
+                        pred_cls, target_cls
+                    )  # TEST: add classification loss
                 )
 
         l2_loss_sum_rel = torch.zeros(1).to(pred_traj_gt)
@@ -299,8 +311,9 @@ def validate(args, model, val_loader, epoch, writer):
 
             loss_mask = loss_mask[:, args.obs_len :]
             # pred_traj_fake_rel = model(obs_traj_rel, obs_traj, seq_start_end)
-            pred_traj_fake_rel, cls_pred = model(obs_traj_rel, obs_traj, seq_start_end) # TEST: class info
-            
+            pred_traj_fake_rel, cls_pred = model(
+                obs_traj_rel, obs_traj, seq_start_end
+            )  # TEST: class info
 
             pred_traj_fake_rel_predpart = pred_traj_fake_rel[-args.pred_len :]
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel_predpart, obs_traj[-1])
