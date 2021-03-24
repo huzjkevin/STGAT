@@ -10,8 +10,8 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            // "args": ["--dataset_name" "trajectory_combined" "--traj_lstm_input_size" "3"]
-            "args": ["--dataset_name" "trajectory_combined" "--resume" "./checkpoint_trajectory_combined_model_best.pth.tar" "--traj_lstm_input_size" "3"]
+            "args": ["--dataset_name" "trajectory_combined"]
+            // "args": ["--dataset_name" "trajectory_combined" "--resume" "./checkpoint_trajectory_combined_model_best.pth.tar" "--traj_lstm_input_size" "3"]
         }
     ]
 }

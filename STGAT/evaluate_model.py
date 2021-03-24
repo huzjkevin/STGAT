@@ -139,6 +139,12 @@ def evaluate(args, loader, generator):
                 seq_start_end,
             ) = batch
 
+            # TEST: remove class info
+            obs_traj = obs_traj[:, :, 0:2]
+            pred_traj_gt = pred_traj_gt[:, :, 0:2]
+            obs_traj_rel = obs_traj_rel[:, :, 0:2]
+            pred_traj_gt_rel = pred_traj_gt_rel[:, :, 0:2]  
+
             ade, fde = [], []
             total_traj += pred_traj_gt.size(1)
 
@@ -154,13 +160,10 @@ def evaluate(args, loader, generator):
                 pred_traj_fake_rel, cls_pred = generator(
                     obs_traj_rel, obs_traj, seq_start_end, 0, 3
                 )
-                # obs_traj = obs_traj[:, :, 0:2]
-                # pred_traj_gt = pred_traj_gt[:, :, 0:2]
-                # obs_traj_rel = obs_traj_rel[:, :, 0:2]
-                # pred_traj_gt_rel = pred_traj_gt_rel[:, :, 0:2]  
+                
                 pred_traj_fake_rel = pred_traj_fake_rel[-args.pred_len :]
-                pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[:, :, 0:2][-1])
-                ade_, fde_ = cal_ade_fde(pred_traj_gt[:, :, 0:2], pred_traj_fake) 
+                pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
+                ade_, fde_ = cal_ade_fde(pred_traj_gt, pred_traj_fake) 
                 # TEST: class info  ===end===
                 
                 ade.append(ade_)

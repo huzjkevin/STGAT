@@ -161,12 +161,8 @@ class TrajectoryGenerator(nn.Module):
         self.noise_dim = noise_dim
         self.noise_type = noise_type
 
-        # self.pred_lstm_model = nn.LSTMCell(
-        #     traj_lstm_input_size, self.pred_lstm_hidden_size
-        # )
-
         self.pred_lstm_model = nn.LSTMCell(
-            traj_lstm_input_size-1, self.pred_lstm_hidden_size
+            traj_lstm_input_size, self.pred_lstm_hidden_size
         )
 
         # TEST: add classification layer
@@ -276,8 +272,8 @@ class TrajectoryGenerator(nn.Module):
             pred_cls = self.cls_model(pred_lstm_hidden)
 
             pred_lstm_c_t = torch.zeros_like(pred_lstm_hidden).cuda()
-            # output = obs_traj_rel[self.obs_len - 1]
-            output = obs_traj_rel[self.obs_len - 1][:, 0:2] # TEST: for adding class info
+            output = obs_traj_rel[self.obs_len - 1]
+            # output = obs_traj_rel[self.obs_len - 1][:, 0:2] # TEST: for adding class info
             if self.training:
                 for i, input_t in enumerate(
                     obs_traj_rel[-self.pred_len :].chunk(

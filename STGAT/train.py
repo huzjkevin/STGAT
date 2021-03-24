@@ -220,6 +220,11 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
         # TEST: extract class info
         target_cls = pred_traj_gt[0, :, 2].squeeze()
         target_cls = target_cls.to(torch.long) 
+        obs_traj = obs_traj[:, :, 0:2]
+        pred_traj_gt = pred_traj_gt[:, :, 0:2]
+        obs_traj_rel = obs_traj_rel[:, :, 0:2]
+        pred_traj_gt_rel = pred_traj_gt_rel[:, :, 0:2]
+        # TEST: end
 
         optimizer.zero_grad()
         loss = torch.zeros(1).to(pred_traj_gt)
@@ -285,15 +290,17 @@ def validate(args, model, val_loader, epoch, writer):
                 loss_mask,
                 seq_start_end,
             ) = batch
-            loss_mask = loss_mask[:, args.obs_len :]
-            # pred_traj_fake_rel = model(obs_traj_rel, obs_traj, seq_start_end)
-            pred_traj_fake_rel, cls_pred = model(obs_traj_rel, obs_traj, seq_start_end)
 
             # TEST: remove class information for following calculation
             obs_traj = obs_traj[:, :, 0:2]
             pred_traj_gt = pred_traj_gt[:, :, 0:2]
             obs_traj_rel = obs_traj_rel[:, :, 0:2]
             pred_traj_gt_rel = pred_traj_gt_rel[:, :, 0:2]
+
+            loss_mask = loss_mask[:, args.obs_len :]
+            # pred_traj_fake_rel = model(obs_traj_rel, obs_traj, seq_start_end)
+            pred_traj_fake_rel, cls_pred = model(obs_traj_rel, obs_traj, seq_start_end) # TEST: class info
+            
 
             pred_traj_fake_rel_predpart = pred_traj_fake_rel[-args.pred_len :]
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel_predpart, obs_traj[-1])

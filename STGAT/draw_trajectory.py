@@ -145,12 +145,19 @@ def plot_trajectory(args, loader, generator):
                 loss_mask,
                 seq_start_end,
             ) = batch
+
+            # TEST: remove class info
+            obs_traj = obs_traj[:, :, 0:2]
+            pred_traj_gt = pred_traj_gt[:, :, 0:2]
+            obs_traj_rel = obs_traj_rel[:, :, 0:2]
+            pred_traj_gt_rel = pred_traj_gt_rel[:, :, 0:2]  
+
             ade = []
             ground_truth_input.append(obs_traj)
             ground_truth_output.append(pred_traj_gt)
             model_output_traj = []
             # model_output_traj_best = torch.ones_like(pred_traj_gt).cuda()
-            model_output_traj_best = torch.ones_like(pred_traj_gt[:, :, 0:2]).cuda() # TEST: class info
+            model_output_traj_best = torch.ones_like(pred_traj_gt).cuda() # TEST: class info
 
             for _ in range(args.num_samples):
                 # pred_traj_fake_rel = generator(
@@ -165,8 +172,8 @@ def plot_trajectory(args, loader, generator):
                     obs_traj_rel, obs_traj, seq_start_end, 0, 3
                 )  
                 pred_traj_fake_rel = pred_traj_fake_rel[-args.pred_len :]
-                pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[:, :, 0:2][-1])
-                ade_, fde_ = cal_ade_fde(pred_traj_gt[:, :, 0:2], pred_traj_fake) 
+                pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
+                ade_, fde_ = cal_ade_fde(pred_traj_gt, pred_traj_fake) 
                 # TEST: class info  ===end===
 
                 model_output_traj.append(pred_traj_fake)         

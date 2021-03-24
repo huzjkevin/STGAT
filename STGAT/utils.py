@@ -117,8 +117,7 @@ def l2_loss(pred_traj, pred_traj_gt, loss_mask, random=0, mode="average"):
     seq_len, batch, _ = pred_traj.size()
     # equation below , the first part do noing, can be delete
 
-    # loss = (pred_traj_gt.permute(1, 0, 2) - pred_traj.permute(1, 0, 2)) ** 2
-    loss = (pred_traj_gt.permute(1, 0, 2)[:, :, 0:2] - pred_traj.permute(1, 0, 2)) ** 2
+    loss = (pred_traj_gt.permute(1, 0, 2) - pred_traj.permute(1, 0, 2)) ** 2
 
     if mode == "sum":
         return torch.sum(loss)
