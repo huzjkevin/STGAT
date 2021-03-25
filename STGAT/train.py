@@ -233,18 +233,12 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
 
         if training_step == 1 or training_step == 2:
             model_input = obs_traj_rel
-            # pred_traj_fake_rel = model(
-            #     model_input, obs_traj, seq_start_end, 1, training_step
-            # )
-
-            # TEST: class info
-            pred_traj_fake_rel, pred_cls = model(
+            pred_traj_fake_rel = model(
                 model_input, obs_traj, seq_start_end, 1, training_step
             )
 
             l2_loss_rel.append(
                 l2_loss(pred_traj_fake_rel, model_input, loss_mask, mode="raw")
-                + cross_entropy(pred_cls, target_cls)  # TEST: add classification loss
             )
         else:
             model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
