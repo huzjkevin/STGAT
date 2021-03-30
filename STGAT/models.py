@@ -217,6 +217,12 @@ class TrajectoryGenerator(nn.Module):
         pred_traj_rel = []
         traj_lstm_hidden_states = []
         graph_lstm_hidden_states = []
+
+        # Time record
+        times = []
+        start0 = torch.cuda.Event(enable_timing=True)
+        end0 = torch.cuda.Event(enable_timing=True)
+        start0.record()
         for i, input_t in enumerate(
             obs_traj_rel[: self.obs_len].chunk(
                 obs_traj_rel[: self.obs_len].size(0), dim=0
@@ -230,6 +236,18 @@ class TrajectoryGenerator(nn.Module):
                 pred_traj_rel += [output]
             else:
                 traj_lstm_hidden_states += [traj_lstm_h_t]
+        
+        # Time record
+        end0.record()
+        # Waits for everything to finish running
+        torch.cuda.synchronize()
+        times.append(start0.elapsed_time(end0))
+
+
+        # Time record
+        start1 = torch.cuda.Event(enable_timing=True)
+        end1 = torch.cuda.Event(enable_timing=True)
+        start1.record()
 
         if training_step == 2:
             graph_lstm_input = self.gatencoder(
@@ -245,6 +263,17 @@ class TrajectoryGenerator(nn.Module):
                 output = self.traj_gat_hidden2pos(encoded_before_noise_hidden)
                 pred_traj_rel += [output]
 
+        # Time record
+        end1.record()
+        torch.cuda.synchronize()
+        times.append(start1.elapsed_time(end1))
+
+
+        # Time record
+        start2 = torch.cuda.Event(enable_timing=True)
+        end2 = torch.cuda.Event(enable_timing=True)
+        start2.record()
+
         if training_step == 3:
             graph_lstm_input = self.gatencoder(
                 torch.stack(traj_lstm_hidden_states), seq_start_end
@@ -259,7 +288,14 @@ class TrajectoryGenerator(nn.Module):
                 )
                 graph_lstm_hidden_states += [graph_lstm_h_t]
 
+        # Time record
+        end2.record()
+        torch.cuda.synchronize()
+        times.append(start2.elapsed_time(end2))
+
         if training_step == 1 or training_step == 2:
+            times.append(0)
+            print("batch time [ms]: ", times)
             return torch.stack(pred_traj_rel)
         else:
             encoded_before_noise_hidden = torch.cat(
@@ -271,7 +307,11 @@ class TrajectoryGenerator(nn.Module):
 
             pred_lstm_c_t = torch.zeros_like(pred_lstm_hidden).cuda()
             output = obs_traj_rel[self.obs_len - 1]
-            # output = obs_traj_rel[self.obs_len - 1][:, 0:2] # TEST: for adding class info
+
+            # Time recording
+            start3 = torch.cuda.Event(enable_timing=True)
+            end3 = torch.cuda.Event(enable_timing=True)
+            start3.record()
             if self.training:
                 for i, input_t in enumerate(
                     obs_traj_rel[-self.pred_len :].chunk(
@@ -302,4 +342,11 @@ class TrajectoryGenerator(nn.Module):
                 pred_cls = self.cls_model(pred_lstm_hidden)
                 outputs = torch.stack(pred_traj_rel)
             # return outputs
+
+            # Time record
+            end3.record()
+            torch.cuda.synchronize()
+            times.append(start3.elapsed_time(end3))
+            print("batch time [ms]: ", times)
+            
             return outputs, pred_cls # TEST: class info
