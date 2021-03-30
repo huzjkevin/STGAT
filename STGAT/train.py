@@ -170,12 +170,12 @@ def main(args):
 
     training_step = 1
     for epoch in range(args.start_epoch, args.num_epochs + 1):
-        if epoch < 150:
+        if epoch < 15:
             training_step = 1
-        elif epoch < 250:
+        elif epoch < 25:
             training_step = 2
         else:
-            if epoch == 250:
+            if epoch == 25:
                 for param_group in optimizer.param_groups:
                     param_group["lr"] = 5e-3
             training_step = 3
@@ -215,28 +215,66 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
             loss_mask,
             seq_start_end,
         ) = batch
+
+        # TEST: reverse input
+        obs_traj_reverse = torch.flip(obs_traj, dims=[0])
+        pred_traj_gt_reverse = torch.flip(pred_traj_gt, dims=[0])
+        obs_traj_rel_reverse = torch.flip(obs_traj_rel, dims=[0])
+        pred_traj_gt_rel_reverse = torch.flip(pred_traj_gt_rel, dims=[0])
+        loss_mask_reverse = torch.flip(loss_mask, dims=[0])
+
         optimizer.zero_grad()
         loss = torch.zeros(1).to(pred_traj_gt)
         l2_loss_rel = []
         loss_mask = loss_mask[:, args.obs_len :]
+        # TEST: reverse input
+        loss_mask_reverse = loss_mask_reverse[:, args.obs_len :]
 
         if training_step == 1 or training_step == 2:
             model_input = obs_traj_rel
             pred_traj_fake_rel = model(
                 model_input, obs_traj, seq_start_end, 1, training_step
             )
+
+            # TEST: reverse input
+            model_input_reverse = obs_traj_rel_reverse
+            pred_traj_fake_rel_reverse = model(
+                model_input_reverse, obs_traj_reverse, seq_start_end, 1, training_step
+            )
+
             l2_loss_rel.append(
                 l2_loss(pred_traj_fake_rel, model_input, loss_mask, mode="raw")
+                + l2_loss(
+                    pred_traj_fake_rel_reverse,
+                    model_input_reverse,
+                    loss_mask_reverse,
+                    mode="raw",
+                )
             )
         else:
             model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
+            # TEST: reverse input
+            model_input_reverse = torch.cat(
+                (obs_traj_rel_reverse, pred_traj_gt_rel_reverse), dim=0
+            )
+
             for _ in range(args.best_k):
                 pred_traj_fake_rel = model(model_input, obs_traj, seq_start_end, 0)
+                # TEST reverse input
+                pred_traj_fake_rel_reverse = model(
+                    model_input_reverse, obs_traj_reverse, seq_start_end, 0
+                )
                 l2_loss_rel.append(
                     l2_loss(
                         pred_traj_fake_rel,
                         model_input[-args.pred_len :],
                         loss_mask,
+                        mode="raw",
+                    )
+                    + l2_loss(
+                        pred_traj_fake_rel_reverse,
+                        model_input_reverse[-args.pred_len :],
+                        loss_mask_reverse,
                         mode="raw",
                     )
                 )
@@ -278,17 +316,40 @@ def validate(args, model, val_loader, epoch, writer):
                 loss_mask,
                 seq_start_end,
             ) = batch
+
+            # TEST: reverse input
+            obs_traj_reverse = torch.flip(obs_traj, dims=[0])
+            pred_traj_gt_reverse = torch.flip(pred_traj_gt, dims=[0])
+            obs_traj_rel_reverse = torch.flip(obs_traj_rel, dims=[0])
+            pred_traj_gt_rel_reverse = torch.flip(pred_traj_gt_rel, dims=[0])
+            loss_mask_reverse = torch.flip(loss_mask, dims=[0])
+
             loss_mask = loss_mask[:, args.obs_len :]
+            # TEST: reverse input
+            loss_mask_reverse = loss_mask_reverse[:, args.obs_len :]
+
             pred_traj_fake_rel = model(obs_traj_rel, obs_traj, seq_start_end)
+            # TEST: reverse input
+            pred_traj_fake_rel_reverse = model(obs_traj_rel_reverse, obs_traj_reverse, seq_start_end)
 
             pred_traj_fake_rel_predpart = pred_traj_fake_rel[-args.pred_len :]
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel_predpart, obs_traj[-1])
+
+            # TEST: reverse input
+            pred_traj_fake_rel_predpart_reverse = pred_traj_fake_rel_reverse[-args.pred_len :]
+            pred_traj_fake_reverse = relative_to_abs(pred_traj_fake_rel_predpart_reverse, obs_traj_reverse[-1])
+
             ade_, fde_ = cal_ade_fde(pred_traj_gt, pred_traj_fake)
             ade_ = ade_ / (obs_traj.shape[1] * args.pred_len)
-
             fde_ = fde_ / (obs_traj.shape[1])
-            ade.update(ade_, obs_traj.shape[1])
-            fde.update(fde_, obs_traj.shape[1])
+
+            # TEST: reverse input
+            ade__reverse, fde__reverse = cal_ade_fde(pred_traj_gt_reverse, pred_traj_fake_reverse)
+            ade__reverse = ade__reverse / (obs_traj_reverse.shape[1] * args.pred_len)
+            fde__reverse = fde__reverse / (obs_traj_reverse.shape[1])
+            
+            ade.update(ade_ + ade__reverse, obs_traj.shape[1] + obs_traj_reverse.shape[1])
+            fde.update(fde_ + fde__reverse, obs_traj.shape[1] + obs_traj_reverse.shape[1])
 
             if i % args.print_every == 0:
                 progress.display(i)

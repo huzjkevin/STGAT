@@ -281,3 +281,187 @@ class TrajectoryGenerator(nn.Module):
                     pred_traj_rel += [output]
                 outputs = torch.stack(pred_traj_rel)
             return outputs
+    
+    # def forward(
+    #     self,
+    #     obs_traj_rel,
+    #     obs_traj_pos,
+    #     seq_start_end,
+    #     teacher_forcing_ratio=0.5,
+    #     training_step=3,
+    # ):
+    #     # TEST: reverse input
+    #     obs_traj_rel_reverse = obs_traj_rel[::-1, :, :]
+    #     obs_traj_pos_reverse = obs_traj_pos[::-1, :, :]
+
+    #     batch = obs_traj_rel.shape[1]
+    #     traj_lstm_h_t, traj_lstm_c_t = self.init_hidden_traj_lstm(batch)
+    #     graph_lstm_h_t, graph_lstm_c_t = self.init_hidden_graph_lstm(batch)
+    #     pred_traj_rel = []
+    #     traj_lstm_hidden_states = []
+    #     graph_lstm_hidden_states = []
+
+    #     # TEST: reverse input
+    #     traj_lstm_h_t_reverse, traj_lstm_c_t_reverse = self.init_hidden_traj_lstm(batch)
+    #     graph_lstm_h_t_reverse, graph_lstm_c_t_reverse = self.init_hidden_graph_lstm(batch)
+    #     pred_traj_rel_reverse = []
+    #     traj_lstm_hidden_states_reverse = []
+    #     graph_lstm_hidden_states_reverse = []
+
+    #     inputs = obs_traj_rel[: self.obs_len].chunk(
+    #         obs_traj_rel[: self.obs_len].size(0), dim=0
+    #     )
+    #     inputs_reverse = obs_traj_rel_reverse[: self.obs_len].chunk(
+    #         obs_traj_rel_reverse[: self.obs_len].size(0), dim=0
+    #     )
+
+    #     # TEST: reverse input
+    #     for i, (input_t, input_t_reverse) in enumerate(zip(inputs, inputs_reverse)):
+    #         traj_lstm_h_t, traj_lstm_c_t = self.traj_lstm_model(
+    #             input_t.squeeze(0), (traj_lstm_h_t, traj_lstm_c_t)
+    #         )
+    #         # TEST: reverse input
+    #         traj_lstm_h_t_reverse, traj_lstm_c_t_reverse = self.traj_lstm_model(
+    #             input_t_reverse.squeeze(0), (traj_lstm_h_t_reverse, traj_lstm_c_t_reverse)
+    #         )
+    #         if training_step == 1:
+    #             output = self.traj_hidden2pos(traj_lstm_h_t)
+    #             pred_traj_rel += [output]
+
+    #             # TEST: reverse input
+    #             output_reverse = self.traj_hidden2pos(traj_lstm_h_t_reverse)
+    #             pred_traj_rel_reverse += [output_reverse]
+    #         else:
+    #             traj_lstm_hidden_states += [traj_lstm_h_t]
+    #             traj_lstm_hidden_states_reverse += [traj_lstm_h_t_reverse]
+
+    #     if training_step == 2:
+    #         graph_lstm_input = self.gatencoder(
+    #             torch.stack(traj_lstm_hidden_states), seq_start_end
+    #         )
+    #         # TEST: reverse input
+    #         graph_lstm_input_reverse = self.gatencoder(
+    #             torch.stack(traj_lstm_hidden_states_reverse), seq_start_end
+    #         )
+    #         for i in range(self.obs_len):
+    #             graph_lstm_h_t, graph_lstm_c_t = self.graph_lstm_model(
+    #                 graph_lstm_input[i], (graph_lstm_h_t, graph_lstm_c_t)
+    #             )
+    #             # TEST: reverse input
+    #             graph_lstm_h_t_reverse, graph_lstm_c_t_reverse = self.graph_lstm_model(
+    #                 graph_lstm_input_reverse[i], (graph_lstm_h_t_reverse, graph_lstm_c_t_reverse)
+    #             )
+    #             encoded_before_noise_hidden = torch.cat(
+    #                 (traj_lstm_hidden_states[i], graph_lstm_h_t), dim=1
+    #             )
+    #             # TEST: reverse input
+    #             encoded_before_noise_hidden_reverse = torch.cat(
+    #                 (traj_lstm_hidden_states_reverse[i], graph_lstm_h_t_reverse), dim=1
+    #             )
+    #             output = self.traj_gat_hidden2pos(encoded_before_noise_hidden)
+    #             pred_traj_rel += [output]
+    #             # TEST: reverse input
+    #             output_reverse = self.traj_gat_hidden2pos(encoded_before_noise_hidden_reverse)
+    #             pred_traj_rel_reverse += [output_reverse]
+
+    #     if training_step == 3:
+    #         graph_lstm_input = self.gatencoder(
+    #             torch.stack(traj_lstm_hidden_states), seq_start_end
+    #         )
+    #         # TEST: reverse input
+    #         graph_lstm_input_reverse = self.gatencoder(
+    #             torch.stack(traj_lstm_hidden_states_reverse), seq_start_end
+    #         )
+
+    #         graph_inputs = graph_lstm_input[: self.obs_len].chunk(
+    #             graph_lstm_input[: self.obs_len].size(0), dim=0
+    #         )
+    #         # TEST: reverse input
+    #         graph_inputs_reverse = graph_lstm_input_reverse[: self.obs_len].chunk(
+    #             graph_lstm_input_reverse[: self.obs_len].size(0), dim=0
+    #         )
+            
+    #         for i, (input_t, input_t_reverse) in enumerate(zip(graph_inputs, graph_inputs_reverse):
+    #             graph_lstm_h_t, graph_lstm_c_t = self.graph_lstm_model(
+    #                 input_t.squeeze(0), (graph_lstm_h_t, graph_lstm_c_t)
+    #             )
+    #             graph_lstm_hidden_states += [graph_lstm_h_t]
+
+    #             # TEST: reverse input 
+    #             graph_lstm_h_t_reverse, graph_lstm_c_t_reverse = self.graph_lstm_model(
+    #                 input_t_reverse.squeeze(0), (graph_lstm_h_t_reverse, graph_lstm_c_t_reverse)
+    #             )
+    #             graph_lstm_hidden_states_reverse += [graph_lstm_h_t_reverse]
+
+    #     if training_step == 1 or training_step == 2:
+    #         # TEST: reverse input
+    #         return torch.stack(pred_traj_rel), torch.stack(pred_traj_rel_reverse)
+    #     else:
+    #         encoded_before_noise_hidden = torch.cat(
+    #             (traj_lstm_hidden_states[-1], graph_lstm_hidden_states[-1]), dim=1
+    #         )
+    #         pred_lstm_hidden = self.add_noise(
+    #             encoded_before_noise_hidden, seq_start_end
+    #         )
+    #         pred_lstm_c_t = torch.zeros_like(pred_lstm_hidden).cuda()
+    #         output = obs_traj_rel[self.obs_len - 1]
+
+    #         # TEST: reverse input
+    #         encoded_before_noise_hidden_reverse = torch.cat(
+    #             (traj_lstm_hidden_states_reverse[-1], graph_lstm_hidden_states_reverse[-1]), dim=1
+    #         )
+    #         pred_lstm_hidden_reverse = self.add_noise(
+    #             encoded_before_noise_hidden_reverse, seq_start_end
+    #         )
+    #         pred_lstm_c_t_reverse = torch.zeros_like(pred_lstm_hidden_reverse).cuda()
+    #         output_reverse = obs_traj_rel_reverse[self.obs_len - 1]
+
+    #         if self.training:
+    #             for i, input_t in enumerate(
+    #                 obs_traj_rel[-self.pred_len :].chunk(
+    #                     obs_traj_rel[-self.pred_len :].size(0), dim=0
+    #                 )
+    #             ):
+    #                 teacher_force = random.random() < teacher_forcing_ratio
+    #                 input_t = input_t if teacher_force else output.unsqueeze(0)
+    #                 pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
+    #                     input_t.squeeze(0), (pred_lstm_hidden, pred_lstm_c_t)
+    #                 )
+    #                 output = self.pred_hidden2pos(pred_lstm_hidden)
+    #                 pred_traj_rel += [output]
+    #             outputs = torch.stack(pred_traj_rel)
+
+    #             # TEST: reverse input
+    #             for i, input_t_reverse in enumerate(
+    #                 obs_traj_rel_reverse[-self.pred_len :].chunk(
+    #                     obs_traj_rel_reverse[-self.pred_len :].size(0), dim=0
+    #                 )
+    #             ):
+    #                 teacher_force = random.random() < teacher_forcing_ratio
+    #                 input_t_reverse = input_t_reverse if teacher_force else output_reverse.unsqueeze(0)
+    #                 pred_lstm_hidden_reverse, pred_lstm_c_t_reverse = self.pred_lstm_model(
+    #                     input_t_reverse.squeeze(0), (pred_lstm_hidden_reverse, pred_lstm_c_t_reverse)
+    #                 )
+    #                 output_reverse = self.pred_hidden2pos(pred_lstm_hidden_reverse)
+    #                 pred_traj_rel_reverse += [output_reverse]
+    #             outputs_reverse = torch.stack(pred_traj_rel_reverse)
+    #         else:
+    #             for i in range(self.pred_len):
+    #                 pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
+    #                     output, (pred_lstm_hidden, pred_lstm_c_t)
+    #                 )
+    #                 output = self.pred_hidden2pos(pred_lstm_hidden)
+    #                 pred_traj_rel += [output]
+    #             outputs = torch.stack(pred_traj_rel)
+
+    #             # TEST: reverse input
+    #             for i in range(self.pred_len):
+    #                 pred_lstm_hidden_reverse, pred_lstm_c_t_reverse = self.pred_lstm_model(
+    #                     output_reverse, (pred_lstm_hidden_reverse, pred_lstm_c_t_reverse)
+    #                 )
+    #                 output_reverse = self.pred_hidden2pos(pred_lstm_hidden_reverse)
+    #                 pred_traj_rel_reverse += [output_reverse]
+    #             outputs_reverse = torch.stack(pred_traj_rel_reverse)
+            
+    #         # TEST: reverse input
+    #         return outputs, outputs_reverse
