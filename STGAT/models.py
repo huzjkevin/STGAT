@@ -269,8 +269,29 @@ class TrajectoryGenerator(nn.Module):
                     pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
                         input_t.squeeze(0), (pred_lstm_hidden, pred_lstm_c_t)
                     )
-                    output = self.pred_hidden2pos(pred_lstm_hidden)
+                    # output = self.pred_hidden2pos(pred_lstm_hidden)
+                    # pred_traj_rel += [output]
+
+                    # ============ TEST: extend gat ==============
+                    output = self.pred_hidden2pos(pred_lstm_hidden) # predicted position at t used for input of t+1
                     pred_traj_rel += [output]
+                    
+                    traj_lstm_h_t, traj_lstm_c_t = self.traj_lstm_model(
+                        output, (traj_lstm_h_t, traj_lstm_c_t)
+                    )
+                    graph_lstm_input = self.gatencoder(
+                        torch.stack([traj_lstm_h_t]), seq_start_end
+                    )
+                    graph_lstm_h_t, graph_lstm_c_t = self.graph_lstm_model(
+                        graph_lstm_input[0], (graph_lstm_h_t, graph_lstm_c_t)
+                    )
+                    encoded_before_noise_hidden = torch.cat(
+                        (traj_lstm_h_t, graph_lstm_h_t), dim=1
+                    )
+                    pred_lstm_hidden = self.add_noise(
+                        encoded_before_noise_hidden, seq_start_end
+                    )                    
+                    # ========= TEST: extend gat (end) ===========
                 outputs = torch.stack(pred_traj_rel)
             else:
                 for i in range(self.pred_len):
