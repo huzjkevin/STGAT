@@ -170,12 +170,12 @@ def main(args):
 
     training_step = 1
     for epoch in range(args.start_epoch, args.num_epochs + 1):
-        if epoch < 1:
+        if epoch < 150:
             training_step = 1
-        elif epoch < 2:
+        elif epoch < 250:
             training_step = 2
         else:
-            if epoch == 2:
+            if epoch == 250:
                 for param_group in optimizer.param_groups:
                     param_group["lr"] = 5e-3
             training_step = 3
