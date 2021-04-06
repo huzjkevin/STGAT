@@ -299,41 +299,75 @@ class TrajectoryGenerator(nn.Module):
                     output = self.pred_hidden2pos(pred_lstm_hidden)
                     pred_traj_rel += [output]
 
-                    traj_lstm_h_t, traj_lstm_c_t = self.traj_lstm_model(
-                        output, (traj_lstm_h_t, traj_lstm_c_t)
+                    traj_lstm_output_h_t, traj_lstm_output_c_t = self.traj_lstm_output_model(
+                        output, (traj_lstm_output_h_t, traj_lstm_output_c_t)
                     )
-                    traj_lstm_hidden_states += [traj_lstm_h_t]
+                    traj_lstm_hidden_states += [traj_lstm_output_h_t]
 
                     if i % 4 == 0:
-                        graph_lstm_input = self.gatencoder(
-                            torch.stack(traj_lstm_hidden_states[-4:]), seq_start_end
+                        graph_lstm_input = self.gatencoder_output(
+                            torch.stack(traj_lstm_hidden_states[-self.obs_len:]), seq_start_end
                         )
                         for i, input_t in enumerate(
-                            graph_lstm_input[:4].chunk(
-                                graph_lstm_input[:4].size(0), dim=0
+                            graph_lstm_input[:self.obs_len].chunk(
+                                graph_lstm_input[:self.obs_len].size(0), dim=0
                             )
                         ):
-                            graph_lstm_h_t, graph_lstm_c_t = self.graph_lstm_model(
-                                input_t.squeeze(0), (graph_lstm_h_t, graph_lstm_c_t)
+                            graph_lstm_output_h_t, graph_lstm_output_c_t = self.graph_lstm_output_model(
+                                input_t.squeeze(0), (graph_lstm_output_h_t, graph_lstm_output_c_t)
                             )
-                            graph_lstm_hidden_states += [graph_lstm_h_t]
+                            graph_lstm_hidden_states += [graph_lstm_output_h_t]
 
                         encoded_before_noise_hidden = torch.cat(
-                            (traj_lstm_h_t, graph_lstm_h_t), dim=1
+                            (traj_lstm_output_h_t, graph_lstm_output_h_t), dim=1
                         )
-                        pred_lstm_hidden = self.add_noise(
+                        pred_lstm_hidden = 0.5 * self.add_noise(
                             encoded_before_noise_hidden, seq_start_end
-                        )
+                        ) + 0.5 * pred_lstm_hidden
 
                     # ========= TEST: extend gat (end) ===========
+                    
                 outputs = torch.stack(pred_traj_rel)
             else:
                 for i in range(self.pred_len):
                     pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
                         output, (pred_lstm_hidden, pred_lstm_c_t)
                     )
+                    # output = self.pred_hidden2pos(pred_lstm_hidden)
+                    # pred_traj_rel += [output]
+
+                    # ============ TEST: extend gat ==============
+
                     output = self.pred_hidden2pos(pred_lstm_hidden)
                     pred_traj_rel += [output]
+
+                    traj_lstm_output_h_t, traj_lstm_output_c_t = self.traj_lstm_output_model(
+                        output, (traj_lstm_output_h_t, traj_lstm_output_c_t)
+                    )
+                    traj_lstm_hidden_states += [traj_lstm_output_h_t]
+
+                    if i % 4 == 0:
+                        graph_lstm_input = self.gatencoder_output(
+                            torch.stack(traj_lstm_hidden_states[-self.obs_len:]), seq_start_end
+                        )
+                        for i, input_t in enumerate(
+                            graph_lstm_input[:self.obs_len].chunk(
+                                graph_lstm_input[:self.obs_len].size(0), dim=0
+                            )
+                        ):
+                            graph_lstm_output_h_t, graph_lstm_output_c_t = self.graph_lstm_output_model(
+                                input_t.squeeze(0), (graph_lstm_output_h_t, graph_lstm_output_c_t)
+                            )
+                            graph_lstm_hidden_states += [graph_lstm_output_h_t]
+
+                        encoded_before_noise_hidden = torch.cat(
+                            (traj_lstm_output_h_t, graph_lstm_output_h_t), dim=1
+                        )
+                        pred_lstm_hidden = 0.5 * self.add_noise(
+                            encoded_before_noise_hidden, seq_start_end
+                        ) + 0.5 * pred_lstm_hidden
+
+                    # ========= TEST: extend gat (end) ===========
                 outputs = torch.stack(pred_traj_rel)
 
             return outputs
