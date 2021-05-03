@@ -12,6 +12,21 @@ def get_noise(shape, noise_type):
     raise ValueError('Unrecognized noise type "%s"' % noise_type)
 
 
+def make_mlp(dim_list, activation="leakyrelu", batch_norm=True, dropout=0, alpha=0.2):
+    layers = []
+    for dim_in, dim_out in zip(dim_list[:-1], dim_list[1:]):
+        layers.append(nn.Linear(dim_in, dim_out))
+        if batch_norm:
+            layers.append(nn.BatchNorm1d(dim_out))
+        if activation == "relu":
+            layers.append(nn.ReLU())
+        elif activation == "leakyrelu":
+            layers.append(nn.LeakyReLU(negative_slope=alpha))
+        if dropout > 0:
+            layers.append(nn.Dropout(p=dropout))
+    return nn.Sequential(*layers)
+
+
 # this efficient implementation comes from https://github.com/xptree/DeepInf/
 class BatchMultiHeadGraphAttention(nn.Module):
     def __init__(self, n_head, f_in, f_out, attn_dropout, bias=True):
@@ -115,7 +130,10 @@ class GATEncoder(nn.Module):
         return graph_embeded_data
 
 
-class TrajectoryGenerator(nn.Module):
+class Encoder(nn.Module):
+    """Encoder is part of both TrajectoryGenerator and
+    TrajectoryDiscriminator"""
+
     def __init__(
         self,
         obs_len,
@@ -125,13 +143,13 @@ class TrajectoryGenerator(nn.Module):
         n_units,
         n_heads,
         graph_network_out_dims,
-        dropout,
-        alpha,
         graph_lstm_hidden_size,
         noise_dim=(8,),
         noise_type="gaussian",
+        dropout=0.2,
+        alpha=0.2
     ):
-        super(TrajectoryGenerator, self).__init__()
+        super(Encoder, self).__init__()
 
         self.obs_len = obs_len
         self.pred_len = pred_len
@@ -140,44 +158,12 @@ class TrajectoryGenerator(nn.Module):
             n_units=n_units, n_heads=n_heads, dropout=dropout, alpha=alpha
         )
 
-        # TEST: extend gat
-        self.gatencoder_output = GATEncoder(
-            n_units=n_units, n_heads=n_heads, dropout=dropout, alpha=alpha
-        )
-
         self.graph_lstm_hidden_size = graph_lstm_hidden_size
         self.traj_lstm_hidden_size = traj_lstm_hidden_size
         self.traj_lstm_input_size = traj_lstm_input_size
 
-        self.pred_lstm_hidden_size = (
-            self.traj_lstm_hidden_size + self.graph_lstm_hidden_size + noise_dim[0]
-        )
-
-        self.traj_lstm_model = nn.LSTMCell(traj_lstm_input_size, traj_lstm_hidden_size)
-        self.graph_lstm_model = nn.LSTMCell(
-            graph_network_out_dims, graph_lstm_hidden_size
-        )
-
-        # TEST: extend gat
-        self.traj_lstm_output_model = nn.LSTMCell(
-            traj_lstm_input_size, traj_lstm_hidden_size
-        )
-        self.graph_lstm_output_model = nn.LSTMCell(
-            graph_network_out_dims, graph_lstm_hidden_size
-        )
-
-        self.traj_hidden2pos = nn.Linear(self.traj_lstm_hidden_size, 2)
-        self.traj_gat_hidden2pos = nn.Linear(
-            self.traj_lstm_hidden_size + self.graph_lstm_hidden_size, 2
-        )
-        self.pred_hidden2pos = nn.Linear(self.pred_lstm_hidden_size, 2)
-
         self.noise_dim = noise_dim
         self.noise_type = noise_type
-
-        self.pred_lstm_model = nn.LSTMCell(
-            traj_lstm_input_size, self.pred_lstm_hidden_size
-        )
 
     def init_hidden_traj_lstm(self, batch):
         return (
@@ -211,18 +197,10 @@ class TrajectoryGenerator(nn.Module):
         obs_traj_rel,
         obs_traj_pos,
         seq_start_end,
-        teacher_forcing_ratio=0.5,
-        training_step=3,
     ):
         batch = obs_traj_rel.shape[1]
         traj_lstm_h_t, traj_lstm_c_t = self.init_hidden_traj_lstm(batch)
         graph_lstm_h_t, graph_lstm_c_t = self.init_hidden_graph_lstm(batch)
-
-        # TEST: extend gat
-        traj_lstm_output_h_t, traj_lstm_output_c_t = self.init_hidden_traj_lstm(batch)
-        graph_lstm_output_h_t, graph_lstm_output_c_t = self.init_hidden_graph_lstm(
-            batch
-        )
 
         pred_traj_rel = []
         traj_lstm_hidden_states = []
@@ -235,139 +213,201 @@ class TrajectoryGenerator(nn.Module):
             traj_lstm_h_t, traj_lstm_c_t = self.traj_lstm_model(
                 input_t.squeeze(0), (traj_lstm_h_t, traj_lstm_c_t)
             )
-            if training_step == 1:
-                output = self.traj_hidden2pos(traj_lstm_h_t)
-                pred_traj_rel += [output]
-            else:
-                traj_lstm_hidden_states += [traj_lstm_h_t]
-        if training_step == 2:
-            graph_lstm_input = self.gatencoder(
-                torch.stack(traj_lstm_hidden_states), seq_start_end
-            )
-            for i in range(self.obs_len):
-                graph_lstm_h_t, graph_lstm_c_t = self.graph_lstm_model(
-                    graph_lstm_input[i], (graph_lstm_h_t, graph_lstm_c_t)
-                )
-                encoded_before_noise_hidden = torch.cat(
-                    (traj_lstm_hidden_states[i], graph_lstm_h_t), dim=1
-                )
-                output = self.traj_gat_hidden2pos(encoded_before_noise_hidden)
-                pred_traj_rel += [output]
+            traj_lstm_hidden_states += [traj_lstm_h_t]
 
-        if training_step == 3:
-            graph_lstm_input = self.gatencoder(
-                torch.stack(traj_lstm_hidden_states), seq_start_end
+        graph_lstm_input = self.gatencoder(
+            torch.stack(traj_lstm_hidden_states), seq_start_end
+        )
+        for i, input_t in enumerate(
+            graph_lstm_input[: self.obs_len].chunk(
+                graph_lstm_input[: self.obs_len].size(0), dim=0
             )
+        ):
+            graph_lstm_h_t, graph_lstm_c_t = self.graph_lstm_model(
+                input_t.squeeze(0), (graph_lstm_h_t, graph_lstm_c_t)
+            )
+            graph_lstm_hidden_states += [graph_lstm_h_t]
+
+        encoded_before_noise_hidden = torch.cat(
+            (traj_lstm_hidden_states[-1], graph_lstm_hidden_states[-1]), dim=1
+        )
+
+        decoder_hidden = self.add_noise(encoded_before_noise_hidden, seq_start_end)
+        return decoder_hidden
+
+
+class Decoder(nn.Module):
+    """Decoder is part of both TrajectoryGenerator and"""
+
+    def __init__(
+        self,
+        obs_len,
+        pred_len,
+        traj_lstm_input_size,
+        traj_lstm_hidden_size,
+        graph_lstm_hidden_size,
+        noise_dim=(8,),
+    ):
+        super(Decoder, self).__init__()
+
+        pred_lstm_hidden_size = (
+            traj_lstm_hidden_size + graph_lstm_hidden_size + noise_dim[0]
+        )
+        self.pred_lstm_model = nn.LSTMCell(
+            traj_lstm_input_size, pred_lstm_hidden_size
+        )
+        self.pred_hidden2pos = nn.Linear(pred_lstm_hidden_size, 2)
+
+    def forward(
+        self,
+        pred_lstm_hidden,
+        obs_traj_rel,
+        obs_traj_pos,
+        teacher_forcing_ratio=0.5,
+    ):
+        pred_lstm_c_t = torch.zeros_like(pred_lstm_hidden).cuda()
+        output = obs_traj_rel[self.obs_len - 1]
+
+        if self.training:
             for i, input_t in enumerate(
-                graph_lstm_input[: self.obs_len].chunk(
-                    graph_lstm_input[: self.obs_len].size(0), dim=0
+                obs_traj_rel[-self.pred_len :].chunk(
+                    obs_traj_rel[-self.pred_len :].size(0), dim=0
                 )
             ):
-                graph_lstm_h_t, graph_lstm_c_t = self.graph_lstm_model(
-                    input_t.squeeze(0), (graph_lstm_h_t, graph_lstm_c_t)
+                teacher_force = random.random() < teacher_forcing_ratio
+                input_t = input_t if teacher_force else output.unsqueeze(0)
+                pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
+                    input_t.squeeze(0), (pred_lstm_hidden, pred_lstm_c_t)
                 )
-                graph_lstm_hidden_states += [graph_lstm_h_t]
+                output = self.pred_hidden2pos(pred_lstm_hidden)
+                pred_traj_rel += [output]
 
-        if training_step == 1 or training_step == 2:
-            return torch.stack(pred_traj_rel)
+            outputs = torch.stack(pred_traj_rel)
         else:
-            encoded_before_noise_hidden = torch.cat(
-                (traj_lstm_hidden_states[-1], graph_lstm_hidden_states[-1]), dim=1
-            )
-            pred_lstm_hidden = self.add_noise(
-                encoded_before_noise_hidden, seq_start_end
-            )
-            pred_lstm_c_t = torch.zeros_like(pred_lstm_hidden).cuda()
-            output = obs_traj_rel[self.obs_len - 1]
+            for i in range(self.pred_len):
+                pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
+                    output, (pred_lstm_hidden, pred_lstm_c_t)
+                )
+                output = self.pred_hidden2pos(pred_lstm_hidden)
+                pred_traj_rel += [output]
 
-            if self.training:
-                for i, input_t in enumerate(
-                    obs_traj_rel[-self.pred_len :].chunk(
-                        obs_traj_rel[-self.pred_len :].size(0), dim=0
-                    )
-                ):
-                    teacher_force = random.random() < teacher_forcing_ratio
-                    input_t = input_t if teacher_force else output.unsqueeze(0)
-                    pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
-                        input_t.squeeze(0), (pred_lstm_hidden, pred_lstm_c_t)
-                    )
-                    # output = self.pred_hidden2pos(pred_lstm_hidden)
-                    # pred_traj_rel += [output]
+            outputs = torch.stack(pred_traj_rel)
 
-                    # ============ TEST: extend gat ==============
+        return outputs
 
-                    output = self.pred_hidden2pos(pred_lstm_hidden)
-                    pred_traj_rel += [output]
 
-                    traj_lstm_output_h_t, traj_lstm_output_c_t = self.traj_lstm_output_model(
-                        output, (traj_lstm_output_h_t, traj_lstm_output_c_t)
-                    )
-                    traj_lstm_hidden_states += [traj_lstm_output_h_t]
+class TrajectoryGenerator(nn.Module):
+    def __init__(
+        self,
+        obs_len,
+        pred_len,
+        traj_lstm_input_size,
+        traj_lstm_hidden_size,
+        n_units,
+        n_heads,
+        graph_network_out_dims,
+        dropout,
+        alpha,
+        graph_lstm_hidden_size,
+        noise_dim=(8,),
+        noise_type="gaussian",
+    ):
+        super(TrajectoryGenerator, self).__init__()
 
-                    if i % 4 == 0:
-                        graph_lstm_input = self.gatencoder_output(
-                            torch.stack(traj_lstm_hidden_states[-self.obs_len:]), seq_start_end
-                        )
-                        for i, input_t in enumerate(
-                            graph_lstm_input[:self.obs_len].chunk(
-                                graph_lstm_input[:self.obs_len].size(0), dim=0
-                            )
-                        ):
-                            graph_lstm_output_h_t, graph_lstm_output_c_t = self.graph_lstm_output_model(
-                                input_t.squeeze(0), (graph_lstm_output_h_t, graph_lstm_output_c_t)
-                            )
-                            graph_lstm_hidden_states += [graph_lstm_output_h_t]
+        self.encoder = Encoder(
+            obs_len=obs_len,
+            pred_len=pred_len,
+            traj_lstm_input_size=traj_lstm_input_size,
+            traj_lstm_hidden_size=traj_lstm_hidden_size,
+            n_units=n_units,
+            n_heads=n_heads,
+            graph_network_out_dims=graph_network_out_dims,
+            graph_lstm_hidden_size=graph_lstm_hidden_size,
+            noise_dim=noise_dim,
+            noise_type=noise_type,
+            dropout=dropout,
+        )
 
-                        encoded_before_noise_hidden = torch.cat(
-                            (traj_lstm_output_h_t, graph_lstm_output_h_t), dim=1
-                        )
-                        pred_lstm_hidden = 0.5 * self.add_noise(
-                            encoded_before_noise_hidden, seq_start_end
-                        ) + 0.5 * pred_lstm_hidden
+        self.decoder = Decoder(
+            obs_len=obs_len,
+            pred_len=pred_len,
+            traj_lstm_input_size=traj_lstm_input_size,
+            traj_lstm_hidden_size=traj_lstm_hidden_size,
+            graph_lstm_hidden_size=graph_lstm_hidden_size,
+            noise_dim=noise_dim,
+        )
 
-                    # ========= TEST: extend gat (end) ===========
-                    
-                outputs = torch.stack(pred_traj_rel)
-            else:
-                for i in range(self.pred_len):
-                    pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
-                        output, (pred_lstm_hidden, pred_lstm_c_t)
-                    )
-                    # output = self.pred_hidden2pos(pred_lstm_hidden)
-                    # pred_traj_rel += [output]
+    def forward(
+        self,
+        obs_traj_rel,
+        obs_traj_pos,
+        seq_start_end,
+        teacher_forcing_ratio=0.5,
+        # training_step=3,
+    ):
+        pred_lstm_hidden = self.encoder(obs_traj_rel, obs_traj_pos, seq_start_end)
+        outputs = self.decoder(
+            pred_lstm_hidden, obs_traj_rel, obs_traj_pos, teacher_forcing_ratio=0.5
+        )
 
-                    # ============ TEST: extend gat ==============
+        return outputs
 
-                    output = self.pred_hidden2pos(pred_lstm_hidden)
-                    pred_traj_rel += [output]
 
-                    traj_lstm_output_h_t, traj_lstm_output_c_t = self.traj_lstm_output_model(
-                        output, (traj_lstm_output_h_t, traj_lstm_output_c_t)
-                    )
-                    traj_lstm_hidden_states += [traj_lstm_output_h_t]
+class TrajectoryDiscriminator(nn.Module):
+    def __init__(
+        self,
+        obs_len,
+        pred_len,
+        traj_lstm_input_size,
+        traj_lstm_hidden_size,
+        n_units,
+        n_heads,
+        graph_network_out_dims,
+        graph_lstm_hidden_size,
+        mlp_dim,
+        noise_dim=(8,),
+        noise_type="gaussian",
+        activation="leakyrelu",
+        batch_norm=True,
+        dropout=0.2,
+        alpha=0.2,
+    ):
+        super(TrajectoryDiscriminator, self).__init__()
 
-                    if i % 4 == 0:
-                        graph_lstm_input = self.gatencoder_output(
-                            torch.stack(traj_lstm_hidden_states[-self.obs_len:]), seq_start_end
-                        )
-                        for i, input_t in enumerate(
-                            graph_lstm_input[:self.obs_len].chunk(
-                                graph_lstm_input[:self.obs_len].size(0), dim=0
-                            )
-                        ):
-                            graph_lstm_output_h_t, graph_lstm_output_c_t = self.graph_lstm_output_model(
-                                input_t.squeeze(0), (graph_lstm_output_h_t, graph_lstm_output_c_t)
-                            )
-                            graph_lstm_hidden_states += [graph_lstm_output_h_t]
+        self.encoder = Encoder(
+            obs_len=obs_len,
+            pred_len=pred_len,
+            traj_lstm_input_size=traj_lstm_input_size,
+            traj_lstm_hidden_size=traj_lstm_hidden_size,
+            n_units=n_units,
+            n_heads=n_heads,
+            graph_network_out_dims=graph_network_out_dims,
+            graph_lstm_hidden_size=graph_lstm_hidden_size,
+            noise_dim=noise_dim,
+            noise_type=noise_type,
+            dropout=dropout,
+        )
 
-                        encoded_before_noise_hidden = torch.cat(
-                            (traj_lstm_output_h_t, graph_lstm_output_h_t), dim=1
-                        )
-                        pred_lstm_hidden = 0.5 * self.add_noise(
-                            encoded_before_noise_hidden, seq_start_end
-                        ) + 0.5 * pred_lstm_hidden
+        pred_lstm_hidden_size = (
+            traj_lstm_hidden_size + graph_lstm_hidden_size + noise_dim[0]
+        )
+        real_classifier_dims = [pred_lstm_hidden_size, mlp_dim, 1]
+        self.real_classifier = make_mlp(
+            real_classifier_dims,
+            activation=activation,
+            batch_norm=batch_norm,
+            dropout=dropout,
+        )
 
-                    # ========= TEST: extend gat (end) ===========
-                outputs = torch.stack(pred_traj_rel)
+    def forward(
+        self,
+        obs_traj_rel,
+        obs_traj_pos,
+        seq_start_end,
+        teacher_forcing_ratio=0.5,
+        # training_step=3,
+    ):
+        classifier_input = self.encoder(obs_traj_rel, obs_traj_pos, seq_start_end)
+        scores = self.real_classifier(classifier_input)
 
-            return outputs
+        return scores
