@@ -9,7 +9,6 @@ from torch.utils.data import Dataset
 
 logger = logging.getLogger(__name__)
 
-
 def seq_collate(data):
     (
         obs_seq_list,
@@ -129,8 +128,6 @@ class TrajectoryDataset(Dataset):
             num_sequences = int(math.ceil((len(frames) - self.seq_len + 1) / skip))
 
             for idx in range(0, num_sequences * self.skip + 1, skip):
-                if path == "/home/kq708907/Projects/STGAT/STGAT/datasets/trajectory_vehicle/train/traj_scene-0246.txt" and idx == 14:
-                    print("debug")
                 # curr_seq_data is a 20 length sequence
                 curr_seq_data = np.concatenate(
                     frame_data[idx : idx + self.seq_len], axis=0
@@ -160,12 +157,12 @@ class TrajectoryDataset(Dataset):
                     curr_seq[_idx, :, pad_front:pad_end] = curr_ped_seq
                     curr_seq_rel[_idx, :, pad_front:pad_end] = rel_curr_ped_seq
                     # Linear vs Non-Linear Trajectory
-                    #_non_linear_ped.append(poly_fit(curr_ped_seq, pred_len, threshold))
+                    _non_linear_ped.append(poly_fit(curr_ped_seq, pred_len, threshold))
                     curr_loss_mask[_idx, pad_front:pad_end] = 1
                     num_peds_considered += 1
 
                 if num_peds_considered > min_ped:
-                    #non_linear_ped += _non_linear_ped
+                    non_linear_ped += _non_linear_ped
                     num_peds_in_seq.append(num_peds_considered)
                     loss_mask_list.append(curr_loss_mask[:num_peds_considered])
                     seq_list.append(curr_seq[:num_peds_considered])
@@ -201,6 +198,7 @@ class TrajectoryDataset(Dataset):
         return self.num_seq
 
     def __getitem__(self, index):
+        index = 10
         start, end = self.seq_start_end[index]
         out = [
             self.obs_traj[start:end, :],

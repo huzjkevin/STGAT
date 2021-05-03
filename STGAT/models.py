@@ -165,6 +165,12 @@ class Encoder(nn.Module):
         self.noise_dim = noise_dim
         self.noise_type = noise_type
 
+        self.traj_lstm_model = nn.LSTMCell(traj_lstm_input_size, traj_lstm_hidden_size)
+        # self.traj_lstm_model.cuda()
+        self.graph_lstm_model = nn.LSTMCell(
+            graph_network_out_dims, graph_lstm_hidden_size
+        )
+
     def init_hidden_traj_lstm(self, batch):
         return (
             torch.randn(batch, self.traj_lstm_hidden_size).cuda(),
@@ -202,7 +208,6 @@ class Encoder(nn.Module):
         traj_lstm_h_t, traj_lstm_c_t = self.init_hidden_traj_lstm(batch)
         graph_lstm_h_t, graph_lstm_c_t = self.init_hidden_graph_lstm(batch)
 
-        pred_traj_rel = []
         traj_lstm_hidden_states = []
         graph_lstm_hidden_states = []
         for i, input_t in enumerate(
@@ -250,6 +255,9 @@ class Decoder(nn.Module):
     ):
         super(Decoder, self).__init__()
 
+        self.obs_len = obs_len
+        self.pred_len = pred_len
+
         pred_lstm_hidden_size = (
             traj_lstm_hidden_size + graph_lstm_hidden_size + noise_dim[0]
         )
@@ -265,6 +273,7 @@ class Decoder(nn.Module):
         obs_traj_pos,
         teacher_forcing_ratio=0.5,
     ):
+        pred_traj_rel = []
         pred_lstm_c_t = torch.zeros_like(pred_lstm_hidden).cuda()
         output = obs_traj_rel[self.obs_len - 1]
 

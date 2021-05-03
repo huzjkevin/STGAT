@@ -5,6 +5,8 @@ import os
 import sys
 import time
 import yaml
+import random
+import numpy as np
 
 from collections import defaultdict
 
@@ -25,6 +27,7 @@ from utils import (
     gan_g_loss,
     relative_to_abs,
     bool_flag,
+    get_total_norm,
 )
 
 # from sgan.losses import gan_g_loss, gan_d_loss, l2_loss
@@ -39,7 +42,7 @@ torch.backends.cudnn.benchmark = True
 parser = argparse.ArgumentParser()
 FORMAT = "[%(levelname)s: %(filename)s: %(lineno)4d]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT, stream=sys.stdout)
-# torch.manual_seed(0) # for debug
+
 # logger = logging.getLogger(__name__)
 # set_logger(os.path.join(args.output_dir, f"train_{args.dataset_name}.log"))
 
@@ -142,6 +145,7 @@ parser.add_argument("--num_samples_check", default=5000, type=int)
 parser.add_argument("--use_gpu", default=0, type=int)
 parser.add_argument("--timing", default=0, type=int)
 parser.add_argument("--gpu_num", default="0", type=str)
+parser.add_argument("--seed", type=int, default=72, help="Random seed.")
 
 
 def init_weights(m):
@@ -229,6 +233,8 @@ def main(args):
 
     generator.apply(init_weights)
     generator.type(float_dtype).train()
+    generator.cuda()
+
     logger.info("Here is the generator:")
     logger.info(generator)
 
@@ -246,11 +252,13 @@ def main(args):
         noise_type=args.noise_type,
         batch_norm=args.batch_norm,
         dropout=args.dropout,
-        alpha=args.alpha
+        alpha=args.alpha,
     )
 
     discriminator.apply(init_weights)
     discriminator.type(float_dtype).train()
+    discriminator.cuda()
+
     logger.info("Here is the discriminator:")
     logger.info(discriminator)
 
@@ -454,12 +462,15 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
         non_linear_ped,
         loss_mask,
         seq_start_end,
-        cls_labels,
+        # cls_labels,
     ) = batch  # TEST: cGAN
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
 
-    generator_out = generator(obs_traj, obs_traj_rel, cls_labels, seq_start_end)
+    model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
+
+    # generator_out = generator(obs_traj, obs_traj_rel, cls_labels, seq_start_end)
+    generator_out = generator(model_input, obs_traj_rel, seq_start_end)
 
     pred_traj_fake_rel = generator_out
     pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
@@ -469,9 +480,8 @@ def discriminator_step(args, batch, generator, discriminator, d_loss_fn, optimiz
     traj_fake = torch.cat([obs_traj, pred_traj_fake], dim=0)
     traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
 
-    # TEST: cGAN
-    scores_fake = discriminator(traj_fake, traj_fake_rel, cls_labels, seq_start_end)
-    scores_real = discriminator(traj_real, traj_real_rel, cls_labels, seq_start_end)
+    scores_fake = discriminator(traj_fake, traj_fake_rel, seq_start_end)
+    scores_real = discriminator(traj_real, traj_real_rel, seq_start_end)
 
     # Compute loss with optional gradient penalty
     data_loss = d_loss_fn(scores_real, scores_fake)
@@ -498,7 +508,7 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
         non_linear_ped,
         loss_mask,
         seq_start_end,
-        cls_labels,
+        # cls_labels,
     ) = batch  # TEST: cGAN
     losses = {}
     loss = torch.zeros(1).to(pred_traj_gt)
@@ -506,10 +516,11 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
 
     loss_mask = loss_mask[:, args.obs_len :]
 
+    model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
+
     for _ in range(args.best_k):
-        generator_out = generator(
-            obs_traj, obs_traj_rel, cls_labels, seq_start_end
-        )  # TEST: cGAN
+        
+        generator_out = generator(model_input, obs_traj_rel, seq_start_end)  # TEST: cGAN
 
         pred_traj_fake_rel = generator_out
         pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
@@ -534,9 +545,7 @@ def generator_step(args, batch, generator, discriminator, g_loss_fn, optimizer_g
     traj_fake = torch.cat([obs_traj, pred_traj_fake], dim=0)
     traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
 
-    scores_fake = discriminator(
-        traj_fake, traj_fake_rel, cls_labels, seq_start_end
-    )  # TEST: cGAN
+    scores_fake = discriminator(traj_fake, traj_fake_rel, seq_start_end)  # TEST: cGAN
     discriminator_loss = g_loss_fn(scores_fake)
 
     loss += discriminator_loss
@@ -572,13 +581,13 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, limit=Fals
                 non_linear_ped,
                 loss_mask,
                 seq_start_end,
-                cls_labels,  # TEST: cGAN
+                # cls_labels,  # TEST: cGAN
             ) = batch
             linear_ped = 1 - non_linear_ped
             loss_mask = loss_mask[:, args.obs_len :]
 
             pred_traj_fake_rel = generator(
-                obs_traj, obs_traj_rel, cls_labels, seq_start_end
+                obs_traj, obs_traj_rel, seq_start_end
             )
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
 
@@ -603,10 +612,10 @@ def check_accuracy(args, loader, generator, discriminator, d_loss_fn, limit=Fals
             traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
 
             scores_fake = discriminator(
-                traj_fake, traj_fake_rel, cls_labels, seq_start_end
+                traj_fake, traj_fake_rel, seq_start_end
             )
             scores_real = discriminator(
-                traj_real, traj_real_rel, cls_labels, seq_start_end
+                traj_real, traj_real_rel, seq_start_end
             )
 
             d_loss = d_loss_fn(scores_real, scores_fake)
@@ -677,6 +686,11 @@ def cal_fde(pred_traj_gt, pred_traj_fake, linear_ped, non_linear_ped):
 
 if __name__ == "__main__":
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
 
     # keep track of console outputs and experiment settings
     os.makedirs(args.output_dir, exist_ok=True)

@@ -1,6 +1,7 @@
 import os
 import logging
 import torch
+import random
 
 
 class AverageMeter(object):
@@ -131,6 +132,38 @@ def l2_loss(pred_traj, pred_traj_gt, loss_mask, random=0, mode="average"):
         return torch.sum(loss) / torch.numel(loss_mask.data)
     elif mode == "raw":
         return loss.sum(dim=2).sum(dim=1)
+
+def get_total_norm(parameters, norm_type=2):
+    if norm_type == float('inf'):
+        total_norm = max(p.grad.data.abs().max() for p in parameters)
+    else:
+        total_norm = 0
+        for p in parameters:
+            try:
+                param_norm = p.grad.data.norm(norm_type)
+                total_norm += param_norm**norm_type
+                total_norm = total_norm**(1. / norm_type)
+            except:
+                continue
+    return total_norm
+
+def bce_loss(input, target):
+    """
+    Numerically stable version of the binary cross-entropy loss function.
+    As per https://github.com/pytorch/pytorch/issues/751
+    See the TensorFlow docs for a derivation of this formula:
+    https://www.tensorflow.org/api_docs/python/tf/nn/sigmoid_cross_entropy_with_logits
+    Input:
+    - input: PyTorch Tensor of shape (N, ) giving scores.
+    - target: PyTorch Tensor of shape (N,) containing 0 and 1 giving targets.
+
+    Output:
+    - A PyTorch Tensor containing the mean BCE loss over the minibatch of
+      input data.
+    """
+    neg_abs = -input.abs()
+    loss = input.clamp(min=0) - input * target + (1 + neg_abs.exp()).log()
+    return loss.mean()
 
 def gan_g_loss(scores_fake):
     """
