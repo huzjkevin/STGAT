@@ -265,8 +265,33 @@ def main(args):
     g_loss_fn = gan_g_loss
     d_loss_fn = gan_d_loss
 
-    optimizer_g = optim.Adam(generator.parameters(), lr=args.g_learning_rate)
-    optimizer_d = optim.Adam(discriminator.parameters(), lr=args.d_learning_rate)
+    # optimizer_g = optim.Adam(generator.parameters(), lr=args.g_learning_rate)
+    # optimizer_d = optim.Adam(discriminator.parameters(), lr=args.d_learning_rate)
+
+    optimizer_g = optim.Adam(
+        [
+            {"params": generator.encoder.traj_lstm_model.parameters(), "lr": 1e-2},
+            # {"params": model.traj_hidden2pos.parameters()},
+            {"params": generator.encoder.gatencoder.parameters(), "lr": 3e-2},
+            {"params": generator.encoder.graph_lstm_model.parameters(), "lr": 1e-2},
+            # {"params": model.traj_gat_hidden2pos.parameters()},
+            {"params": generator.decoder.pred_lstm_model.parameters()},
+            {"params": generator.decoder.pred_hidden2pos.parameters()},
+        ],
+        lr=args.g_learning_rate,
+    )
+
+    optimizer_d = optim.Adam(
+        [
+            {"params": discriminator.encoder.traj_lstm_model.parameters(), "lr": 1e-2},
+            # {"params": model.traj_hidden2pos.parameters()},
+            {"params": discriminator.encoder.gatencoder.parameters(), "lr": 3e-2},
+            {"params": discriminator.encoder.graph_lstm_model.parameters(), "lr": 1e-2},
+            # {"params": model.traj_gat_hidden2pos.parameters()},
+            {"params": discriminator.real_classifier.parameters()},
+        ],
+        lr=args.d_learning_rate,
+    )
 
     # Maybe restore from checkpoint
     restore_path = None

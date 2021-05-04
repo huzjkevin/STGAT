@@ -141,15 +141,28 @@ def main(args):
         noise_type=args.noise_type,
     )
     model.cuda()
+    # optimizer = optim.Adam(
+    #     [
+    #         {"params": model.traj_lstm_model.parameters(), "lr": 1e-2},
+    #         {"params": model.traj_hidden2pos.parameters()},
+    #         {"params": model.gatencoder.parameters(), "lr": 3e-2},
+    #         {"params": model.graph_lstm_model.parameters(), "lr": 1e-2},
+    #         {"params": model.traj_gat_hidden2pos.parameters()},
+    #         {"params": model.pred_lstm_model.parameters()},
+    #         {"params": model.pred_hidden2pos.parameters()},
+    #     ],
+    #     lr=args.lr,
+    # )
+
     optimizer = optim.Adam(
         [
-            {"params": model.traj_lstm_model.parameters(), "lr": 1e-2},
-            {"params": model.traj_hidden2pos.parameters()},
-            {"params": model.gatencoder.parameters(), "lr": 3e-2},
-            {"params": model.graph_lstm_model.parameters(), "lr": 1e-2},
-            {"params": model.traj_gat_hidden2pos.parameters()},
-            {"params": model.pred_lstm_model.parameters()},
-            {"params": model.pred_hidden2pos.parameters()},
+            {"params": model.encoder.traj_lstm_model.parameters(), "lr": 1e-2},
+            # {"params": model.traj_hidden2pos.parameters()},
+            {"params": model.encoder.gatencoder.parameters(), "lr": 3e-2},
+            {"params": model.encoder.graph_lstm_model.parameters(), "lr": 1e-2},
+            # {"params": model.traj_gat_hidden2pos.parameters()},
+            {"params": model.decoder.pred_lstm_model.parameters()},
+            {"params": model.decoder.pred_hidden2pos.parameters()},
         ],
         lr=args.lr,
     )
@@ -179,6 +192,7 @@ def main(args):
                 for param_group in optimizer.param_groups:
                     param_group["lr"] = 5e-3
             training_step = 3
+        training_step = 3
         train(args, model, train_loader, optimizer, epoch, training_step, writer)
         if training_step == 3:
             ade = validate(args, model, val_loader, epoch, writer)
