@@ -47,6 +47,7 @@ parser.add_argument(
     "--traj_lstm_input_size", type=int, default=2, help="traj_lstm_input_size"
 )
 parser.add_argument("--traj_lstm_hidden_size", default=32, type=int)
+parser.add_argument("--cls_embedding_dim", default=16, type=int)
 
 parser.add_argument(
     "--heads", type=str, default="4,1", help="Heads in each layer, splitted with comma"
@@ -126,7 +127,7 @@ def main(args):
     writer = SummaryWriter()
 
     n_units = (
-        [args.traj_lstm_hidden_size]
+        [args.traj_lstm_hidden_size + args.cls_embedding_dim] # TEST: cgan
         + [int(x) for x in args.hidden_units.strip().split(",")]
         + [args.graph_lstm_hidden_size]
     )
@@ -143,6 +144,7 @@ def main(args):
         dropout=args.dropout,
         alpha=args.alpha,
         graph_lstm_hidden_size=args.graph_lstm_hidden_size,
+        cls_embedding_dim=args.cls_embedding_dim,
         noise_dim=args.noise_dim,
         noise_type=args.noise_type,
     )
@@ -157,6 +159,7 @@ def main(args):
         n_heads=n_heads,
         graph_network_out_dims=args.graph_network_out_dims,
         graph_lstm_hidden_size=args.graph_lstm_hidden_size,
+        cls_embedding_dim=args.cls_embedding_dim,
         mlp_dim=args.mlp_dim,
         noise_dim=args.noise_dim,
         noise_type=args.noise_type,
@@ -171,6 +174,7 @@ def main(args):
             {"params": generator.encoder.traj_lstm_model.parameters(), "lr": 1e-3},
             {"params": generator.encoder.gatencoder.parameters(), "lr": 3e-3},
             {"params": generator.encoder.graph_lstm_model.parameters(), "lr": 1e-3},
+            {"params": generator.encoder.cls_encoder.parameters(), "lr": 1e-3},
             {"params": generator.decoder.pred_lstm_model.parameters()},
             {"params": generator.decoder.pred_hidden2pos.parameters()},
         ],
@@ -182,6 +186,7 @@ def main(args):
             {"params": discriminator.encoder.traj_lstm_model.parameters(), "lr": 1e-3},
             {"params": discriminator.encoder.gatencoder.parameters(), "lr": 3e-3},
             {"params": discriminator.encoder.graph_lstm_model.parameters(), "lr": 1e-3},
+            {"params": discriminator.encoder.cls_encoder.parameters(), "lr": 1e-3},
             {"params": discriminator.real_classifier.parameters()},
         ],
         lr=args.d_lr,
@@ -267,6 +272,7 @@ def train_generator(
         non_linear_ped,
         loss_mask,
         seq_start_end,
+        cls_labels,
     ) = batch
 
     optimizer_g.zero_grad()
@@ -278,7 +284,7 @@ def train_generator(
     # generator part
     model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
     for _ in range(args.best_k):
-        pred_traj_fake_rel = generator(model_input, obs_traj, seq_start_end, 0)
+        pred_traj_fake_rel = generator(model_input, obs_traj, seq_start_end, cls_labels, 0)
         l2_loss_rel.append(
             l2_loss(
                 pred_traj_fake_rel,
@@ -300,9 +306,10 @@ def train_generator(
 
     loss += l2_loss_sum_rel
     losses["G_l2_loss"] = l2_loss_sum_rel.item()
+
     # discriminator part
     traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
-    scores_fake = discriminator(traj_fake_rel, obs_traj, seq_start_end)
+    scores_fake = discriminator(traj_fake_rel, obs_traj, seq_start_end, cls_labels)
     discriminator_loss = g_loss_fn(scores_fake)
 
     loss += discriminator_loss
@@ -337,6 +344,7 @@ def train_discriminator(
         non_linear_ped,
         loss_mask,
         seq_start_end,
+        cls_labels
     ) = batch
 
     optimizer_d.zero_grad()
@@ -347,14 +355,14 @@ def train_discriminator(
 
     # generator part
     model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
-    pred_traj_fake_rel = generator(model_input, obs_traj, seq_start_end, 0)
+    pred_traj_fake_rel = generator(model_input, obs_traj, seq_start_end, cls_labels, 0)
 
     # discriminator part
     traj_real_rel = torch.cat([obs_traj_rel, pred_traj_gt_rel], dim=0)
     traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
 
-    scores_fake = discriminator(traj_fake_rel, obs_traj, seq_start_end)
-    scores_real = discriminator(traj_real_rel, obs_traj, seq_start_end)
+    scores_fake = discriminator(traj_fake_rel, obs_traj, seq_start_end, cls_labels)
+    scores_real = discriminator(traj_real_rel, obs_traj, seq_start_end, cls_labels)
 
     # Compute loss with optional gradient penalty
     data_loss = d_loss_fn(scores_real, scores_fake)
@@ -451,6 +459,7 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
             non_linear_ped,
             loss_mask,
             seq_start_end,
+            cls_labels
         ) = batch
         optimizer.zero_grad()
         loss = torch.zeros(1).to(pred_traj_gt)
@@ -514,10 +523,11 @@ def validate(args, generator, val_loader, epoch, writer):
                 non_linear_ped,
                 loss_mask,
                 seq_start_end,
+                cls_labels,
             ) = batch
 
             loss_mask = loss_mask[:, args.obs_len :]
-            pred_traj_fake_rel = generator(obs_traj_rel, obs_traj, seq_start_end)
+            pred_traj_fake_rel = generator(obs_traj_rel, obs_traj, seq_start_end, cls_labels)
 
             pred_traj_fake_rel_predpart = pred_traj_fake_rel[-args.pred_len :]
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel_predpart, obs_traj[-1])

@@ -144,6 +144,7 @@ class Encoder(nn.Module):
         n_heads,
         graph_network_out_dims,
         graph_lstm_hidden_size,
+        cls_embedding_dim=16,
         noise_dim=(8,),
         noise_type="gaussian",
         dropout=0.2,
@@ -166,10 +167,13 @@ class Encoder(nn.Module):
         self.noise_type = noise_type
 
         self.traj_lstm_model = nn.LSTMCell(traj_lstm_input_size, traj_lstm_hidden_size)
-        # self.traj_lstm_model.cuda()
         self.graph_lstm_model = nn.LSTMCell(
             graph_network_out_dims, graph_lstm_hidden_size
         )
+
+        # TEST: cGAN
+        self.cls_embedding_dim = cls_embedding_dim
+        self.cls_encoder = nn.Linear(1, cls_embedding_dim)
 
     def init_hidden_traj_lstm(self, batch):
         return (
@@ -203,6 +207,7 @@ class Encoder(nn.Module):
         obs_traj_rel,
         obs_traj_pos,
         seq_start_end,
+        cls_labels,
     ):
         batch = obs_traj_rel.shape[1]
         traj_lstm_h_t, traj_lstm_c_t = self.init_hidden_traj_lstm(batch)
@@ -220,8 +225,14 @@ class Encoder(nn.Module):
             )
             traj_lstm_hidden_states += [traj_lstm_h_t]
 
+        # TEST: cGAN
+        cls_embedding = self.cls_encoder(cls_labels)
+        cls_embeddings = torch.stack([cls_embedding] * len(traj_lstm_hidden_states))
+        gat_input = torch.stack(traj_lstm_hidden_states)
+        gat_input = torch.cat([gat_input, cls_embeddings], dim=-1)
+
         graph_lstm_input = self.gatencoder(
-            torch.stack(traj_lstm_hidden_states), seq_start_end
+            gat_input, seq_start_end
         )
         for i, input_t in enumerate(
             graph_lstm_input[: self.obs_len].chunk(
@@ -318,6 +329,7 @@ class TrajectoryGenerator(nn.Module):
         dropout,
         alpha,
         graph_lstm_hidden_size,
+        cls_embedding_dim,
         noise_dim=(8,),
         noise_type="gaussian",
     ):
@@ -332,6 +344,7 @@ class TrajectoryGenerator(nn.Module):
             n_heads=n_heads,
             graph_network_out_dims=graph_network_out_dims,
             graph_lstm_hidden_size=graph_lstm_hidden_size,
+            cls_embedding_dim=cls_embedding_dim,
             noise_dim=noise_dim,
             noise_type=noise_type,
             dropout=dropout,
@@ -351,10 +364,10 @@ class TrajectoryGenerator(nn.Module):
         obs_traj_rel,
         obs_traj_pos,
         seq_start_end,
+        cls_labels,
         teacher_forcing_ratio=0.5,
-        # training_step=3,
     ):
-        pred_lstm_hidden = self.encoder(obs_traj_rel, obs_traj_pos, seq_start_end)
+        pred_lstm_hidden = self.encoder(obs_traj_rel, obs_traj_pos, seq_start_end, cls_labels)
         outputs = self.decoder(
             pred_lstm_hidden, obs_traj_rel, obs_traj_pos, teacher_forcing_ratio=0.5
         )
@@ -373,6 +386,7 @@ class TrajectoryDiscriminator(nn.Module):
         n_heads,
         graph_network_out_dims,
         graph_lstm_hidden_size,
+        cls_embedding_dim,
         mlp_dim,
         noise_dim=(8,),
         noise_type="gaussian",
@@ -392,6 +406,7 @@ class TrajectoryDiscriminator(nn.Module):
             n_heads=n_heads,
             graph_network_out_dims=graph_network_out_dims,
             graph_lstm_hidden_size=graph_lstm_hidden_size,
+            cls_embedding_dim=cls_embedding_dim,
             noise_dim=noise_dim,
             noise_type=noise_type,
             dropout=dropout,
@@ -413,10 +428,11 @@ class TrajectoryDiscriminator(nn.Module):
         obs_traj_rel,
         obs_traj_pos,
         seq_start_end,
+        cls_labels,
         teacher_forcing_ratio=0.5,
         # training_step=3,
     ):
-        classifier_input = self.encoder(obs_traj_rel, obs_traj_pos, seq_start_end)
+        classifier_input = self.encoder(obs_traj_rel, obs_traj_pos, seq_start_end, cls_labels)
         scores = self.real_classifier(classifier_input)
 
         return scores

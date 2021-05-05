@@ -1,11 +1,12 @@
 python ./STGAT/train_gan_ver2.py \
-  --dataset_name "trajectory_combined" \
+  --dataset_name "trajectory_combined_cls" \
   --delim tab \
   --pred_len 12 \
   --noise_dim 8 \
   --noise_type gaussian \
   --traj_lstm_input_size 2 \
   --traj_lstm_hidden_size 32 \
+  --cls_embedding_dim 16 \
   --heads "4,1" \
   --hidden-units 16 \
   --graph_network_out_dims 32 \

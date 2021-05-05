@@ -17,6 +17,7 @@ def seq_collate(data):
         pred_seq_rel_list,
         non_linear_ped_list,
         loss_mask_list,
+        traj_cls_list,
     ) = zip(*data)
 
     _len = [len(seq) for seq in obs_seq_list]
@@ -32,6 +33,7 @@ def seq_collate(data):
     pred_traj_rel = torch.cat(pred_seq_rel_list, dim=0).permute(2, 0, 1)
     non_linear_ped = torch.cat(non_linear_ped_list)
     loss_mask = torch.cat(loss_mask_list, dim=0)
+    traj_cls = torch.cat(traj_cls_list, dim=0)
     seq_start_end = torch.LongTensor(seq_start_end)
     out = [
         obs_traj,
@@ -41,6 +43,7 @@ def seq_collate(data):
         non_linear_ped,
         loss_mask,
         seq_start_end,
+        traj_cls,
     ]
 
     return tuple(out)
@@ -117,6 +120,7 @@ class TrajectoryDataset(Dataset):
         num_peds_in_seq = []
         seq_list = []
         seq_list_rel = []
+        seq_cls_list = []
         loss_mask_list = []
         non_linear_ped = []
         for path in all_files:
@@ -135,6 +139,7 @@ class TrajectoryDataset(Dataset):
                 peds_in_curr_seq = np.unique(curr_seq_data[:, 1])
                 curr_seq_rel = np.zeros((len(peds_in_curr_seq), 2, self.seq_len))
                 curr_seq = np.zeros((len(peds_in_curr_seq), 2, self.seq_len))
+                curr_seq_cls = np.zeros((len(peds_in_curr_seq), 1))
                 curr_loss_mask = np.zeros((len(peds_in_curr_seq), self.seq_len))
                 num_peds_considered = 0
                 _non_linear_ped = []
@@ -148,7 +153,15 @@ class TrajectoryDataset(Dataset):
 
                     if pad_end - pad_front != self.seq_len:
                         continue
-                    curr_ped_seq = np.transpose(curr_ped_seq[:, 2:])
+
+                    # TEST: cGAN
+                    curr_cls = np.unique(curr_ped_seq[:, -1])
+                    assert np.all(
+                        curr_cls == curr_cls[0]
+                    ), "Detect inconsistent class information in one trajectory!"
+                    curr_cls = curr_cls[0]
+
+                    curr_ped_seq = np.transpose(curr_ped_seq[:, 2:-1])
                     curr_ped_seq = curr_ped_seq
                     # Make coordinates relative
                     rel_curr_ped_seq = np.zeros(curr_ped_seq.shape)
@@ -156,6 +169,7 @@ class TrajectoryDataset(Dataset):
                     _idx = num_peds_considered
                     curr_seq[_idx, :, pad_front:pad_end] = curr_ped_seq
                     curr_seq_rel[_idx, :, pad_front:pad_end] = rel_curr_ped_seq
+                    curr_seq_cls[_idx, :] = curr_cls  # TEST: cGAN
                     # Linear vs Non-Linear Trajectory
                     _non_linear_ped.append(poly_fit(curr_ped_seq, pred_len, threshold))
                     curr_loss_mask[_idx, pad_front:pad_end] = 1
@@ -167,10 +181,14 @@ class TrajectoryDataset(Dataset):
                     loss_mask_list.append(curr_loss_mask[:num_peds_considered])
                     seq_list.append(curr_seq[:num_peds_considered])
                     seq_list_rel.append(curr_seq_rel[:num_peds_considered])
+                    seq_cls_list.append(
+                        curr_seq_cls[:num_peds_considered]
+                    )  # TEST: cGAN
 
         self.num_seq = len(seq_list)
         seq_list = np.concatenate(seq_list, axis=0)
         seq_list_rel = np.concatenate(seq_list_rel, axis=0)
+        seq_cls_list = np.concatenate(seq_cls_list, axis=0)  # TEST: cGAN
         loss_mask_list = np.concatenate(loss_mask_list, axis=0)
         non_linear_ped = np.asarray(non_linear_ped)
 
@@ -187,6 +205,7 @@ class TrajectoryDataset(Dataset):
         self.pred_traj_rel = torch.from_numpy(seq_list_rel[:, :, self.obs_len :]).type(
             torch.float
         )
+        self.traj_cls = torch.from_numpy(seq_cls_list).type(torch.float) # TEST: cGAN
         self.loss_mask = torch.from_numpy(loss_mask_list).type(torch.float)
         self.non_linear_ped = torch.from_numpy(non_linear_ped).type(torch.float)
         cum_start_idx = [0] + np.cumsum(num_peds_in_seq).tolist()
@@ -207,5 +226,6 @@ class TrajectoryDataset(Dataset):
             self.pred_traj_rel[start:end, :],
             self.non_linear_ped[start:end],
             self.loss_mask[start:end, :],
+            self.traj_cls[start:end, :],
         ]
         return out
