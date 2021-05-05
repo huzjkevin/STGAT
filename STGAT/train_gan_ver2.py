@@ -48,6 +48,7 @@ parser.add_argument(
 )
 parser.add_argument("--traj_lstm_hidden_size", default=32, type=int)
 parser.add_argument("--cls_embedding_dim", default=16, type=int)
+parser.add_argument("--n_classes", default=3, type=int)
 
 parser.add_argument(
     "--heads", type=str, default="4,1", help="Heads in each layer, splitted with comma"
@@ -171,7 +172,9 @@ def main(args):
 
     optimizer_g = optim.Adam(
         [
-            {"params": generator.encoder.traj_lstm_model.parameters(), "lr": 1e-3},
+            {"params": generator.encoder.traj_lstm_models[0].parameters(), "lr": 1e-3},
+            {"params": generator.encoder.traj_lstm_models[1].parameters(), "lr": 1e-3},
+            {"params": generator.encoder.traj_lstm_models[2].parameters(), "lr": 1e-3},
             {"params": generator.encoder.gatencoder.parameters(), "lr": 3e-3},
             {"params": generator.encoder.graph_lstm_model.parameters(), "lr": 1e-3},
             {"params": generator.encoder.cls_encoder.parameters(), "lr": 1e-3},
@@ -183,7 +186,9 @@ def main(args):
 
     optimizer_d = optim.Adam(
         [
-            {"params": discriminator.encoder.traj_lstm_model.parameters(), "lr": 1e-3},
+            {"params": generator.encoder.traj_lstm_models[0].parameters(), "lr": 1e-3},
+            {"params": generator.encoder.traj_lstm_models[1].parameters(), "lr": 1e-3},
+            {"params": generator.encoder.traj_lstm_models[2].parameters(), "lr": 1e-3},
             {"params": discriminator.encoder.gatencoder.parameters(), "lr": 3e-3},
             {"params": discriminator.encoder.graph_lstm_model.parameters(), "lr": 1e-3},
             {"params": discriminator.encoder.cls_encoder.parameters(), "lr": 1e-3},
