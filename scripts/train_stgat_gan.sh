@@ -13,15 +13,16 @@ python ./STGAT/train_gan_ver2.py \
   --mlp_dim 256 \
   --dropout 0 \
   --alpha 0.2 \
-  --batch_size 32 \
+  --batch_size 64 \
   --batch_norm 0 \
-  --num_epochs 1000 \
-  --best_k 5 \
+  --num_epochs 200 \
+  --best_k 10 \
   --gpu_num 0 \
   --g_lr 1e-3 \
   --d_lr 1e-3 \
   --ckpt_interval 10 \
   --val_interval 5 \
-  --print_every 50 \
+  --print_every 100 \
   --clipping_threshold_g 1.5 \
   --clipping_threshold_d 1.5 \
+  --verbose

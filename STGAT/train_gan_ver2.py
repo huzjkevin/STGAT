@@ -389,10 +389,10 @@ def train_gan(
     # )
 
     tb_dict = {
-        "G_l2_loss_epoch": 0,
-        "G_discriminator_loss_epoch": 0,
-        "G_total_loss_epoch": 0,
-        "D_total_loss_epoch": 0,
+        "G_l2_loss_epoch": [],
+        "G_discriminator_loss_epoch": [],
+        "G_total_loss_epoch": [],
+        "D_total_loss_epoch": [],
     }
 
     if args.verbose:
@@ -407,10 +407,10 @@ def train_gan(
             args, batch, generator, discriminator, optimizer_d, d_loss_fn
         )
 
-        tb_dict["G_l2_loss_epoch"] += losses_g["G_l2_loss"]
-        tb_dict["G_discriminator_loss_epoch"] += losses_g["G_discriminator_loss"]
-        tb_dict["G_total_loss_epoch"] += losses_g["G_total_loss"]
-        tb_dict["D_total_loss_epoch"] += losses_d["D_total_loss"]
+        tb_dict["G_l2_loss_epoch"].append(losses_g["G_l2_loss"])
+        tb_dict["G_discriminator_loss_epoch"].append(losses_g["G_discriminator_loss"])
+        tb_dict["G_total_loss_epoch"].append(losses_g["G_total_loss"])
+        tb_dict["D_total_loss_epoch"].append(losses_d["D_total_loss"])
 
         # print training info to console and log
         if batch_idx % args.print_every == 0 and args.verbose:
@@ -422,16 +422,16 @@ def train_gan(
                 logging.info("  [D] {}: {:.3f}".format(k, v))
                 # checkpoint["G_losses"][k].append(v)
             logging.info("")
-
+    
     if args.verbose:
         for k, v in sorted(tb_dict.items()):
-            log_writer.add_scalar(k, v, epoch)
-            logging.info(f"  {k}: {v}")
+            log_writer.add_scalar(k, sum(v) / len(v), epoch)
+            logging.info(f"  {k}: {sum(v) / len(v)}")
 
         logging.info(f"**Train epoch: {epoch} end**\n")
     else:
         logging.info(
-            f"Train epoch {epoch}: G_l2_loss_epoch {tb_dict['G_l2_loss_epoch']}"
+            f"Train epoch {epoch}: G_l2_loss_epoch {sum(tb_dict['G_l2_loss_epoch']) / len(tb_dict['G_l2_loss_epoch'])}"
         )
 
 

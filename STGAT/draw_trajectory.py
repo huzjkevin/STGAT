@@ -136,7 +136,7 @@ parser.add_argument("--mlp_dim", default=512, type=int)
 parser.add_argument("--best_k", default=20, type=int)
 parser.add_argument("--use_gpu", default=1, type=int)
 parser.add_argument("--gpu_num", default="0", type=str)
-parser.add_argument("--dset_type", default="train", type=str)
+parser.add_argument("--dset_type", default="test", type=str)
 parser.add_argument("--num_samples", default=20, type=int)
 
 parser.add_argument(
