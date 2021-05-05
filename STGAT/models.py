@@ -388,7 +388,7 @@ class TrajectoryGenerator(nn.Module):
             n_heads=n_heads,
             graph_network_out_dims=graph_network_out_dims,
             graph_lstm_hidden_size=graph_lstm_hidden_size,
-            n_classes=n_classes
+            n_classes=n_classes,
             cls_embedding_dim=cls_embedding_dim,
             noise_dim=noise_dim,
             noise_type=noise_type,
