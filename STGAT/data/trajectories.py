@@ -217,7 +217,7 @@ class TrajectoryDataset(Dataset):
         return self.num_seq
 
     def __getitem__(self, index):
-        # index = 25
+        index = 25
         start, end = self.seq_start_end[index]
         out = [
             self.obs_traj[start:end, :],

@@ -13,3 +13,4 @@ traj_fig*
 traj*
 **/*.txt
 output*/
+exp*/

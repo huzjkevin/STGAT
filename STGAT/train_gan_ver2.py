@@ -1,12 +1,16 @@
 import argparse
+import datetime
 import logging
 import os
 import random
 import shutil
+import yaml
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
+
+# import torch.optim as optim
+from optim_utils import Optim
 from torch.utils.tensorboard import SummaryWriter
 
 import utils
@@ -79,8 +83,10 @@ parser.add_argument("--mlp_dim", default=512, type=int)
 
 parser.add_argument("--clipping_threshold_g", default=0, type=float)
 parser.add_argument("--clipping_threshold_d", default=0, type=float)
-parser.add_argument("--g_lr", default=5e-4, type=float)
-parser.add_argument("--d_lr", default=5e-4, type=float)
+parser.add_argument("--g_lr0", default=5e-3, type=float)
+parser.add_argument("--d_lr0", default=5e-3, type=float)
+parser.add_argument("--g_lr1", default=5e-6, type=float)
+parser.add_argument("--d_lr1", default=5e-6, type=float)
 
 parser.add_argument(
     "--start-epoch",
@@ -110,25 +116,38 @@ best_ade = 100
 
 
 def main(args):
+    curr_time = datetime.datetime.now()
+    output_dir = f"exp_{args.dataset_name}_{curr_time.strftime('%Y%m%H%M%S')}"
+    os.makedirs(output_dir, exist_ok=True)
+
+    checkpoint_dir = os.path.join(output_dir, f"checkpoint_{args.dataset_name}")
+    if os.path.exists(checkpoint_dir) is False:
+        os.mkdir(checkpoint_dir)
+
+    # keep track of console outputs and experiment settings
+    utils.set_logger(os.path.join(output_dir, args.log_dir, f"train_{args.dataset_name}.log"))
+    config_file = open(os.path.join(output_dir, f"config_{args.dataset_name}.yaml"), "w")
+    yaml.dump(args, config_file)
+    tensorboard_dir = os.path.join(output_dir, "tensorboard")
+    writer = SummaryWriter(tensorboard_dir)
+
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.benchmark = True
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
     train_path = get_dset_path(args.dataset_name, "train")
-    val_path = get_dset_path(args.dataset_name, "test")
+    val_path = get_dset_path(args.dataset_name, "train")
 
     logging.info("Initializing train dataset\n")
     train_dset, train_loader = data_loader(args, train_path)
     logging.info("Initializing val dataset\n")
     _, val_loader = data_loader(args, val_path)
 
-    writer = SummaryWriter()
-
     n_units = (
-        [args.traj_lstm_hidden_size + args.cls_embedding_dim] # TEST: cgan
+        [args.traj_lstm_hidden_size + args.cls_embedding_dim]  # TEST: cgan
         + [int(x) for x in args.hidden_units.strip().split(",")]
         + [args.graph_lstm_hidden_size]
     )
@@ -170,32 +189,38 @@ def main(args):
     )
     discriminator.cuda()
 
-    optimizer_g = optim.Adam(
-        [
-            {"params": generator.encoder.traj_lstm_models[0].parameters(), "lr": 1e-3},
-            {"params": generator.encoder.traj_lstm_models[1].parameters(), "lr": 1e-3},
-            {"params": generator.encoder.traj_lstm_models[2].parameters(), "lr": 1e-3},
-            {"params": generator.encoder.gatencoder.parameters(), "lr": 3e-3},
-            {"params": generator.encoder.graph_lstm_model.parameters(), "lr": 1e-3},
-            {"params": generator.encoder.cls_encoder.parameters(), "lr": 1e-3},
-            {"params": generator.decoder.pred_lstm_model.parameters()},
-            {"params": generator.decoder.pred_hidden2pos.parameters()},
-        ],
-        lr=args.g_lr,
-    )
+    # configure a exponential decay lr scheduler
+    optimizer_g_cfg = {"epoch0": 0, "epoch1": args.num_epochs, "lr0": args.g_lr0, "lr1": args.g_lr1}
+    optimizer_g = Optim(generator, optimizer_g_cfg)
+    optimizer_d_cfg = {"epoch0": 0, "epoch1": args.num_epochs, "lr0": args.d_lr0, "lr1": args.d_lr1}
+    optimizer_d = Optim(discriminator, optimizer_d_cfg)
 
-    optimizer_d = optim.Adam(
-        [
-            {"params": generator.encoder.traj_lstm_models[0].parameters(), "lr": 1e-3},
-            {"params": generator.encoder.traj_lstm_models[1].parameters(), "lr": 1e-3},
-            {"params": generator.encoder.traj_lstm_models[2].parameters(), "lr": 1e-3},
-            {"params": discriminator.encoder.gatencoder.parameters(), "lr": 3e-3},
-            {"params": discriminator.encoder.graph_lstm_model.parameters(), "lr": 1e-3},
-            {"params": discriminator.encoder.cls_encoder.parameters(), "lr": 1e-3},
-            {"params": discriminator.real_classifier.parameters()},
-        ],
-        lr=args.d_lr,
-    )
+    # optimizer_g = optim.Adam(
+    #     [
+    #         {"params": generator.encoder.traj_lstm_models[0].parameters(), "lr": 1e-3},
+    #         {"params": generator.encoder.traj_lstm_models[1].parameters(), "lr": 1e-3},
+    #         {"params": generator.encoder.traj_lstm_models[2].parameters(), "lr": 1e-3},
+    #         {"params": generator.encoder.gatencoder.parameters(), "lr": 3e-3},
+    #         {"params": generator.encoder.graph_lstm_model.parameters(), "lr": 1e-3},
+    #         {"params": generator.encoder.cls_encoder.parameters(), "lr": 1e-3},
+    #         {"params": generator.decoder.pred_lstm_model.parameters()},
+    #         {"params": generator.decoder.pred_hidden2pos.parameters()},
+    #     ],
+    #     lr=args.g_lr,
+    # )
+
+    # optimizer_d = optim.Adam(
+    #     [
+    #         {"params": generator.encoder.traj_lstm_models[0].parameters(), "lr": 1e-3},
+    #         {"params": generator.encoder.traj_lstm_models[1].parameters(), "lr": 1e-3},
+    #         {"params": generator.encoder.traj_lstm_models[2].parameters(), "lr": 1e-3},
+    #         {"params": discriminator.encoder.gatencoder.parameters(), "lr": 3e-3},
+    #         {"params": discriminator.encoder.graph_lstm_model.parameters(), "lr": 1e-3},
+    #         {"params": discriminator.encoder.cls_encoder.parameters(), "lr": 1e-3},
+    #         {"params": discriminator.real_classifier.parameters()},
+    #     ],
+    #     lr=args.d_lr,
+    # )
     global best_ade
     if args.resume:
         if os.path.isfile(args.resume):
@@ -240,32 +265,42 @@ def main(args):
             ade = validate(args, generator, val_loader, epoch, writer)
             is_best = ade < best_ade
             best_ade = min(ade, best_ade)
-
+            ckpt_fname = os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar")
             save_checkpoint(
                 ckpt_state,
                 save_ckpt,
                 is_best,
-                f"./checkpoint_{args.dataset_name}/checkpoint{epoch}.pth.tar",
+                os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar"),
             )
         elif save_ckpt:
             save_checkpoint(
                 ckpt_state,
                 save_ckpt,
                 is_best,
-                f"./checkpoint_{args.dataset_name}/checkpoint{epoch}.pth.tar",
+                os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar"),
             )
 
     writer.close()
 
 
 def train_generator(
-    args,
-    batch,
-    generator,
-    discriminator,
-    optimizer_g,
-    g_loss_fn,
+    args, batch, generator, discriminator, optimizer_g, g_loss_fn, epoch, ratio
 ):
+    """[Train one batch for generator]
+
+    Args:
+        args: control arguments
+        batch: batch data
+        generator: the model of generator
+        discriminator: the model of discriminator
+        optimizer_g: optimizer for generator
+        g_loss_fn: loss function of generator
+        epoch: current epoch
+        ratio: [0, 1) is the progress of the training epoch. Used by lr_scheduler
+
+    Returns:
+        batch loss dictionary
+    """
     generator.train()
     discriminator.train()
 
@@ -281,6 +316,8 @@ def train_generator(
     ) = batch
 
     optimizer_g.zero_grad()
+    optimizer_g.set_lr(epoch + ratio)
+
     loss = torch.zeros(1).to(pred_traj_gt)
     losses = {}
     l2_loss_rel = []
@@ -289,7 +326,9 @@ def train_generator(
     # generator part
     model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
     for _ in range(args.best_k):
-        pred_traj_fake_rel = generator(model_input, obs_traj, seq_start_end, cls_labels, 0)
+        pred_traj_fake_rel = generator(
+            model_input, obs_traj, seq_start_end, cls_labels, 0
+        )
         l2_loss_rel.append(
             l2_loss(
                 pred_traj_fake_rel,
@@ -331,12 +370,7 @@ def train_generator(
 
 
 def train_discriminator(
-    args,
-    batch,
-    generator,
-    discriminator,
-    optimizer_d,
-    d_loss_fn,
+    args, batch, generator, discriminator, optimizer_d, d_loss_fn, epoch, ratio
 ):
     generator.train()
     discriminator.train()
@@ -349,10 +383,12 @@ def train_discriminator(
         non_linear_ped,
         loss_mask,
         seq_start_end,
-        cls_labels
+        cls_labels,
     ) = batch
 
     optimizer_d.zero_grad()
+    optimizer_d.set_lr(epoch + ratio)
+
     loss = torch.zeros(1).to(pred_traj_gt)
     losses = {}
     l2_loss_rel = []
@@ -412,103 +448,110 @@ def train_gan(
         logging.info(f"**Train epoch: {epoch} start**")
 
     for batch_idx, batch in enumerate(train_loader):
+        ratio = batch_idx / len(train_loader)
         batch = [tensor.cuda() for tensor in batch]
         losses_g = train_generator(
-            args, batch, generator, discriminator, optimizer_g, g_loss_fn
+            args, batch, generator, discriminator, optimizer_g, g_loss_fn, epoch, ratio
         )
         losses_d = train_discriminator(
-            args, batch, generator, discriminator, optimizer_d, d_loss_fn
+            args, batch, generator, discriminator, optimizer_d, d_loss_fn, epoch, ratio
         )
 
         tb_dict["G_l2_loss_epoch"].append(losses_g["G_l2_loss"])
         tb_dict["G_discriminator_loss_epoch"].append(losses_g["G_discriminator_loss"])
         tb_dict["G_total_loss_epoch"].append(losses_g["G_total_loss"])
         tb_dict["D_total_loss_epoch"].append(losses_d["D_total_loss"])
+        log_writer.add_scalar("lr_g", optimizer_g.get_lr(), batch_idx)
+        log_writer.add_scalar("lr_d", optimizer_d.get_lr(), batch_idx)
 
         # print training info to console and log
         if batch_idx % args.print_every == 0 and args.verbose:
             logging.info("  sample batch:")
             for k, v in sorted(losses_g.items()):
                 logging.info("  [G] {}: {:.3f}".format(k, v))
-                # checkpoint["D_losses"][k].append(v)
+            logging.info(f"  [G] batch learning rate: {optimizer_g.get_lr()}")
+
             for k, v in sorted(losses_d.items()):
                 logging.info("  [D] {}: {:.3f}".format(k, v))
-                # checkpoint["G_losses"][k].append(v)
+            logging.info(f"  [D] batch learning rate: {optimizer_d.get_lr()}")
             logging.info("")
-    
+
     if args.verbose:
         for k, v in sorted(tb_dict.items()):
             log_writer.add_scalar(k, sum(v) / len(v), epoch)
             logging.info(f"  {k}: {sum(v) / len(v)}")
 
+        logging.info(f"  [G] batch learning rate: {optimizer_g.get_lr()}")
+        logging.info(f"  [D] batch learning rate: {optimizer_d.get_lr()}")
+
         logging.info(f"**Train epoch: {epoch} end**\n")
     else:
         logging.info(
-            f"Train epoch {epoch}: G_l2_loss_epoch {sum(tb_dict['G_l2_loss_epoch']) / len(tb_dict['G_l2_loss_epoch'])}"
+            f"Train epoch {epoch}: G_l2_loss_epoch {sum(tb_dict['G_l2_loss_epoch']) / len(tb_dict['G_l2_loss_epoch'])} | lr_g / lr_d: {optimizer_g.get_lr()} / {optimizer_d.get_lr()}"
         )
 
 
-def train(args, model, train_loader, optimizer, epoch, training_step, writer):
-    losses = utils.AverageMeter("Loss", ":.6f")
-    progress = utils.ProgressMeter(
-        len(train_loader), [losses], prefix="Epoch: [{}]".format(epoch)
-    )
-    model.train()
-    for batch_idx, batch in enumerate(train_loader):
-        batch = [tensor.cuda() for tensor in batch]
-        (
-            obs_traj,
-            pred_traj_gt,
-            obs_traj_rel,
-            pred_traj_gt_rel,
-            non_linear_ped,
-            loss_mask,
-            seq_start_end,
-            cls_labels
-        ) = batch
-        optimizer.zero_grad()
-        loss = torch.zeros(1).to(pred_traj_gt)
-        l2_loss_rel = []
-        loss_mask = loss_mask[:, args.obs_len :]
+# def train(args, model, train_loader, optimizer, epoch, training_step, writer):
+#     losses = utils.AverageMeter("Loss", ":.6f")
+#     progress = utils.ProgressMeter(
+#         len(train_loader), [losses], prefix="Epoch: [{}]".format(epoch)
+#     )
+#     model.train()
+#     for batch_idx, batch in enumerate(train_loader):
+#         batch = [tensor.cuda() for tensor in batch]
+#         (
+#             obs_traj,
+#             pred_traj_gt,
+#             obs_traj_rel,
+#             pred_traj_gt_rel,
+#             non_linear_ped,
+#             loss_mask,
+#             seq_start_end,
+#             cls_labels,
+#         ) = batch
+#         optimizer.zero_grad()
+#         loss = torch.zeros(1).to(pred_traj_gt)
+#         l2_loss_rel = []
+#         loss_mask = loss_mask[:, args.obs_len :]
 
-        if training_step == 1 or training_step == 2:
-            model_input = obs_traj_rel
-            pred_traj_fake_rel = model(
-                model_input, obs_traj, seq_start_end, 1, training_step
-            )
-            l2_loss_rel.append(
-                l2_loss(pred_traj_fake_rel, model_input, loss_mask, mode="raw")
-            )
-        else:
-            model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
-            for _ in range(args.best_k):
-                pred_traj_fake_rel = model(model_input, obs_traj, seq_start_end, 0)
-                l2_loss_rel.append(
-                    l2_loss(
-                        pred_traj_fake_rel,
-                        model_input[-args.pred_len :],
-                        loss_mask,
-                        mode="raw",
-                    )
-                )
+#         if training_step == 1 or training_step == 2:
+#             model_input = obs_traj_rel
+#             pred_traj_fake_rel = model(
+#                 model_input, obs_traj, seq_start_end, 1, training_step
+#             )
+#             l2_loss_rel.append(
+#                 l2_loss(pred_traj_fake_rel, model_input, loss_mask, mode="raw")
+#             )
+#         else:
+#             model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
+#             for _ in range(args.best_k):
+#                 pred_traj_fake_rel = model(model_input, obs_traj, seq_start_end, 0)
+#                 l2_loss_rel.append(
+#                     l2_loss(
+#                         pred_traj_fake_rel,
+#                         model_input[-args.pred_len :],
+#                         loss_mask,
+#                         mode="raw",
+#                     )
+#                 )
 
-        l2_loss_sum_rel = torch.zeros(1).to(pred_traj_gt)
-        l2_loss_rel = torch.stack(l2_loss_rel, dim=1)
-        for start, end in seq_start_end.data:
-            _l2_loss_rel = torch.narrow(l2_loss_rel, 0, start, end - start)
-            _l2_loss_rel = torch.sum(_l2_loss_rel, dim=0)  # [20]
-            _l2_loss_rel = torch.min(_l2_loss_rel) / (
-                (pred_traj_fake_rel.shape[0]) * (end - start)
-            )
-            l2_loss_sum_rel += _l2_loss_rel
+#         l2_loss_sum_rel = torch.zeros(1).to(pred_traj_gt)
+#         l2_loss_rel = torch.stack(l2_loss_rel, dim=1)
+#         for start, end in seq_start_end.data:
+#             _l2_loss_rel = torch.narrow(l2_loss_rel, 0, start, end - start)
+#             _l2_loss_rel = torch.sum(_l2_loss_rel, dim=0)  # [20]
+#             _l2_loss_rel = torch.min(_l2_loss_rel) / (
+#                 (pred_traj_fake_rel.shape[0]) * (end - start)
+#             )
+#             l2_loss_sum_rel += _l2_loss_rel
 
-        loss += l2_loss_sum_rel
-        losses.update(loss.item(), obs_traj.shape[1])
-        loss.backward()
-        optimizer.step()
-        if batch_idx % args.print_every == 0:
-            progress.display(batch_idx)
-    writer.add_scalar("train_loss", losses.avg, epoch)
+#         loss += l2_loss_sum_rel
+#         losses.update(loss.item(), obs_traj.shape[1])
+#         loss.backward()
+#         optimizer.step()
+#         if batch_idx % args.print_every == 0:
+#             progress.display(batch_idx)
+#     writer.add_scalar("train_loss", losses.avg, epoch)
 
 
 def validate(args, generator, val_loader, epoch, writer):
@@ -532,7 +575,9 @@ def validate(args, generator, val_loader, epoch, writer):
             ) = batch
 
             loss_mask = loss_mask[:, args.obs_len :]
-            pred_traj_fake_rel = generator(obs_traj_rel, obs_traj, seq_start_end, cls_labels)
+            pred_traj_fake_rel = generator(
+                obs_traj_rel, obs_traj, seq_start_end, cls_labels
+            )
 
             pred_traj_fake_rel_predpart = pred_traj_fake_rel[-args.pred_len :]
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel_predpart, obs_traj[-1])
@@ -571,8 +616,4 @@ def save_checkpoint(state, save_ckpt, is_best, filename="checkpoint.pth.tar"):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    utils.set_logger(os.path.join(args.log_dir, f"train_{args.dataset_name}.log"))
-    checkpoint_dir = f"./checkpoint_{args.dataset_name}"
-    if os.path.exists(checkpoint_dir) is False:
-        os.mkdir(checkpoint_dir)
     main(args)

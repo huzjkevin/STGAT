@@ -1,4 +1,4 @@
-python ./STGAT/train_gan_ver2.py \
+python ./STGAT/evaluate_model.py \
   --dataset_name "trajectory_combined_cls" \
   --delim tab \
   --pred_len 12 \
@@ -19,13 +19,6 @@ python ./STGAT/train_gan_ver2.py \
   --num_epochs 200 \
   --best_k 20 \
   --gpu_num 0 \
-  --g_lr0 5e-3 \
-  --d_lr0 5e-3 \
-  --g_lr1 1e-6 \
-  --d_lr1 1e-6 \
-  --ckpt_interval 10 \
-  --val_interval 5 \
-  --print_every 100 \
-  --clipping_threshold_g 1.5 \
-  --clipping_threshold_d 1.5 \
-  --verbose
+  --resume "checkpoint_trajectory_combined_cls_model_best.pth.tar" \
+  --dset_type train \
+  --num_samples 20 \

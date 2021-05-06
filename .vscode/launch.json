@@ -44,13 +44,16 @@
                      "--num_epochs", "1000",
                      "--best_k", "5",
                      "--gpu_num", "0",
-                     "--g_lr", "1e-3",
-                     "--d_lr", "1e-3",
+                     "--g_lr0", "5e-3",
+                     "--d_lr0", "5e-3",
+                     "--g_lr1", "1e-6",
+                     "--d_lr1", "1e-6",
                      "--ckpt_interval", "10",
                      "--val_interval", "5",
                      "--print_every", "50",
                      "--clipping_threshold_g", "1.5",
                      "--clipping_threshold_d", "1.5",
+                    
                 
                 // for evaluation and draw traj
                 // "--resume", "checkpoint_trajectory_combined_model_best.pth.tar",
