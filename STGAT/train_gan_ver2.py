@@ -117,7 +117,7 @@ best_ade = 100
 
 def main(args):
     curr_time = datetime.datetime.now()
-    output_dir = f"exp_{args.dataset_name}_{curr_time.strftime('%Y%m%H%M%S')}"
+    output_dir = f"exp_{args.dataset_name}_{curr_time.strftime('%Y%m%d%H%M%S')}"
     os.makedirs(output_dir, exist_ok=True)
 
     checkpoint_dir = os.path.join(output_dir, f"checkpoint_{args.dataset_name}")
