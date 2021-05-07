@@ -175,9 +175,9 @@ class Encoder(nn.Module):
                 nn.LSTMCell(traj_lstm_input_size, traj_lstm_hidden_size).cuda()
             )
 
-        self.traj_lstm_fusion = make_mlp(
-            [traj_lstm_hidden_size, graph_lstm_hidden_size]
-        )
+        # self.traj_lstm_fusion = make_mlp(
+        #     [traj_lstm_hidden_size, graph_lstm_hidden_size]
+        # )
 
         self.graph_lstm_model = nn.LSTMCell(
             graph_network_out_dims, graph_lstm_hidden_size
@@ -269,8 +269,8 @@ class Encoder(nn.Module):
                 cls_inds = classes_inds[cls_label].squeeze(1)
                 unfused_lstm_h_t[cls_inds] = multi_traj_lstm_hidden_states[cls_label][0]
 
-            fused_lstm_h_t = self.traj_lstm_fusion(unfused_lstm_h_t)
-            traj_lstm_hidden_states.append(fused_lstm_h_t)
+            # fused_lstm_h_t = self.traj_lstm_fusion(unfused_lstm_h_t)
+            traj_lstm_hidden_states.append(unfused_lstm_h_t)
 
         # TEST: cGAN
         cls_embedding = self.cls_encoder(cls_labels)

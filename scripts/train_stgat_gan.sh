@@ -28,4 +28,4 @@ python ./STGAT/train_gan_ver2.py \
   --print_every 100 \
   --clipping_threshold_g 1.5 \
   --clipping_threshold_d 1.5 \
-  --verbose
+  # --verbose
