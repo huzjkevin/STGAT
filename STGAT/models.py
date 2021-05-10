@@ -554,32 +554,6 @@ class TrajectoryGenerator(nn.Module):
                 obs_traj_rel[: self.obs_len].size(0), dim=0
             )
         ):
-            fused_lstm_h_t = torch.zeros(
-                (cls_labels.shape[0], self.traj_lstm_hidden_size)
-            ).cuda()
-
-            for cls_label in range(self.n_classes):
-                # check if current traj_lstm_model is needed
-                if cls_label not in classes_inds.keys():
-                    continue
-
-                input_t = input_t.squeeze(0)
-                input_t_cls = input_t[cls_labels.squeeze(1) == cls_label, :]
-                multi_traj_lstm_hidden_states[cls_label] = self.traj_lstm_models[
-                    cls_label
-                ](input_t_cls, multi_traj_lstm_hidden_states[cls_label])
-                cls_inds = classes_inds[cls_label].squeeze(1)
-                fused_lstm_h_t[cls_inds] = multi_traj_lstm_hidden_states[cls_label][0]
-
-            # fused_lstm_h_t = self.traj_lstm_fusion(unfused_lstm_h_t)
-            traj_lstm_hidden_states.append(fused_lstm_h_t)
-
-
-        for i, input_t in enumerate(
-            obs_traj_rel[: self.obs_len].chunk(
-                obs_traj_rel[: self.obs_len].size(0), dim=0
-            )
-        ):
             # traj_lstm_h_t, traj_lstm_c_t = self.traj_lstm_model(
             #     input_t.squeeze(0), (traj_lstm_h_t, traj_lstm_c_t)
             # )
