@@ -176,7 +176,7 @@ class Encoder(nn.Module):
             )
 
         # self.traj_lstm_fusion = make_mlp(
-        #     [traj_lstm_hidden_size, graph_lstm_hidden_size]
+        #     [traj_lstm_hidden_size, graph_network_out_dims]
         # )
 
         self.graph_lstm_model = nn.LSTMCell(
@@ -359,6 +359,69 @@ class Decoder(nn.Module):
         return outputs
 
 
+# class TrajectoryGenerator(nn.Module):
+#     def __init__(
+#         self,
+#         obs_len,
+#         pred_len,
+#         traj_lstm_input_size,
+#         traj_lstm_hidden_size,
+#         n_units,
+#         n_heads,
+#         graph_network_out_dims,
+#         dropout,
+#         alpha,
+#         graph_lstm_hidden_size,
+#         n_classes=3,
+#         cls_embedding_dim=16,
+#         noise_dim=(8,),
+#         noise_type="gaussian",
+#     ):
+#         super(TrajectoryGenerator, self).__init__()
+
+#         self.encoder = Encoder(
+#             obs_len=obs_len,
+#             pred_len=pred_len,
+#             traj_lstm_input_size=traj_lstm_input_size,
+#             traj_lstm_hidden_size=traj_lstm_hidden_size,
+#             n_units=n_units,
+#             n_heads=n_heads,
+#             graph_network_out_dims=graph_network_out_dims,
+#             graph_lstm_hidden_size=graph_lstm_hidden_size,
+#             n_classes=n_classes,
+#             cls_embedding_dim=cls_embedding_dim,
+#             noise_dim=noise_dim,
+#             noise_type=noise_type,
+#             dropout=dropout,
+#         )
+
+#         self.decoder = Decoder(
+#             obs_len=obs_len,
+#             pred_len=pred_len,
+#             traj_lstm_input_size=traj_lstm_input_size,
+#             traj_lstm_hidden_size=traj_lstm_hidden_size,
+#             graph_lstm_hidden_size=graph_lstm_hidden_size,
+#             noise_dim=noise_dim,
+#         )
+
+#     def forward(
+#         self,
+#         obs_traj_rel,
+#         obs_traj_pos,
+#         seq_start_end,
+#         cls_labels,
+#         teacher_forcing_ratio=0.5,
+#     ):
+#         pred_lstm_hidden = self.encoder(
+#             obs_traj_rel, obs_traj_pos, seq_start_end, cls_labels
+#         )
+#         outputs = self.decoder(
+#             pred_lstm_hidden, obs_traj_rel, obs_traj_pos, teacher_forcing_ratio=0.5
+#         )
+
+#         return outputs
+
+
 class TrajectoryGenerator(nn.Module):
     def __init__(
         self,
@@ -372,37 +435,83 @@ class TrajectoryGenerator(nn.Module):
         dropout,
         alpha,
         graph_lstm_hidden_size,
-        n_classes=3,
         cls_embedding_dim=16,
+        n_classes=3,
         noise_dim=(8,),
         noise_type="gaussian",
     ):
         super(TrajectoryGenerator, self).__init__()
 
-        self.encoder = Encoder(
-            obs_len=obs_len,
-            pred_len=pred_len,
-            traj_lstm_input_size=traj_lstm_input_size,
-            traj_lstm_hidden_size=traj_lstm_hidden_size,
-            n_units=n_units,
-            n_heads=n_heads,
-            graph_network_out_dims=graph_network_out_dims,
-            graph_lstm_hidden_size=graph_lstm_hidden_size,
-            n_classes=n_classes,
-            cls_embedding_dim=cls_embedding_dim,
-            noise_dim=noise_dim,
-            noise_type=noise_type,
-            dropout=dropout,
+        self.obs_len = obs_len
+        self.pred_len = pred_len
+
+        self.gatencoder = GATEncoder(
+            n_units=n_units, n_heads=n_heads, dropout=dropout, alpha=alpha
         )
 
-        self.decoder = Decoder(
-            obs_len=obs_len,
-            pred_len=pred_len,
-            traj_lstm_input_size=traj_lstm_input_size,
-            traj_lstm_hidden_size=traj_lstm_hidden_size,
-            graph_lstm_hidden_size=graph_lstm_hidden_size,
-            noise_dim=noise_dim,
+        self.graph_lstm_hidden_size = graph_lstm_hidden_size
+        self.traj_lstm_hidden_size = traj_lstm_hidden_size
+        self.traj_lstm_input_size = traj_lstm_input_size
+
+        self.pred_lstm_hidden_size = (
+            self.traj_lstm_hidden_size + self.graph_lstm_hidden_size + noise_dim[0]
         )
+
+        # self.traj_lstm_model = nn.LSTMCell(traj_lstm_input_size, traj_lstm_hidden_size)
+        # TEST: multi-lstm
+        self.n_classes = n_classes
+        self.traj_lstm_models = []
+        for _ in range(n_classes):
+            self.traj_lstm_models.append(
+                nn.LSTMCell(traj_lstm_input_size, traj_lstm_hidden_size).cuda()
+            )
+
+        self.graph_lstm_model = nn.LSTMCell(
+            graph_network_out_dims, graph_lstm_hidden_size
+        )
+        self.traj_hidden2pos = nn.Linear(self.traj_lstm_hidden_size, 2)
+        self.traj_gat_hidden2pos = nn.Linear(
+            self.traj_lstm_hidden_size + self.graph_lstm_hidden_size, 2
+        )
+        self.pred_hidden2pos = nn.Linear(self.pred_lstm_hidden_size, 2)
+
+        self.noise_dim = noise_dim
+        self.noise_type = noise_type
+
+        self.pred_lstm_model = nn.LSTMCell(
+            traj_lstm_input_size, self.pred_lstm_hidden_size
+        )
+
+        # TEST: cGAN
+        self.cls_embedding_dim = cls_embedding_dim
+        self.cls_encoder = nn.Linear(1, cls_embedding_dim)
+
+    def init_hidden_traj_lstm(self, batch):
+        return (
+            torch.randn(batch, self.traj_lstm_hidden_size).cuda(),
+            torch.randn(batch, self.traj_lstm_hidden_size).cuda(),
+        )
+
+    def init_hidden_graph_lstm(self, batch):
+        return (
+            torch.randn(batch, self.graph_lstm_hidden_size).cuda(),
+            torch.randn(batch, self.graph_lstm_hidden_size).cuda(),
+        )
+
+    def add_noise(self, _input, seq_start_end):
+        noise_shape = (seq_start_end.size(0),) + self.noise_dim
+
+        z_decoder = get_noise(noise_shape, self.noise_type)
+
+        _list = []
+        for idx, (start, end) in enumerate(seq_start_end):
+            start = start.item()
+            end = end.item()
+            _vec = z_decoder[idx].view(1, -1)
+            _to_cat = _vec.repeat(end - start, 1)
+            _list.append(torch.cat([_input[start:end], _to_cat], dim=1))
+        decoder_h = torch.cat(_list, dim=0)
+        return decoder_h
 
     def forward(
         self,
@@ -411,15 +520,170 @@ class TrajectoryGenerator(nn.Module):
         seq_start_end,
         cls_labels,
         teacher_forcing_ratio=0.5,
+        training_step=3,
     ):
-        pred_lstm_hidden = self.encoder(
-            obs_traj_rel, obs_traj_pos, seq_start_end, cls_labels
-        )
-        outputs = self.decoder(
-            pred_lstm_hidden, obs_traj_rel, obs_traj_pos, teacher_forcing_ratio=0.5
-        )
+        batch = obs_traj_rel.shape[1]
+        # traj_lstm_h_t, traj_lstm_c_t = self.init_hidden_traj_lstm(batch)
+        classes_inds = {}
+        multi_traj_lstm_hidden_states = {}
 
-        return outputs
+        for cls_label in range(self.n_classes):
+            cls_inds = cls_labels == cls_label
+            batch_cls = cls_inds.sum()
+
+            if batch_cls == 0:
+                continue
+            else:
+                traj_cls_lstm_h_t, traj_cls_lstm_c_t = self.init_hidden_traj_lstm(
+                    batch_cls
+                )
+                classes_inds[cls_label] = cls_inds
+
+            multi_traj_lstm_hidden_states[cls_label] = (
+                traj_cls_lstm_h_t,
+                traj_cls_lstm_c_t,
+            )
+
+        graph_lstm_h_t, graph_lstm_c_t = self.init_hidden_graph_lstm(batch)
+        pred_traj_rel = []
+        traj_lstm_hidden_states = []
+        graph_lstm_hidden_states = []
+
+        for i, input_t in enumerate(
+            obs_traj_rel[: self.obs_len].chunk(
+                obs_traj_rel[: self.obs_len].size(0), dim=0
+            )
+        ):
+            fused_lstm_h_t = torch.zeros(
+                (cls_labels.shape[0], self.traj_lstm_hidden_size)
+            ).cuda()
+
+            for cls_label in range(self.n_classes):
+                # check if current traj_lstm_model is needed
+                if cls_label not in classes_inds.keys():
+                    continue
+
+                input_t = input_t.squeeze(0)
+                input_t_cls = input_t[cls_labels.squeeze(1) == cls_label, :]
+                multi_traj_lstm_hidden_states[cls_label] = self.traj_lstm_models[
+                    cls_label
+                ](input_t_cls, multi_traj_lstm_hidden_states[cls_label])
+                cls_inds = classes_inds[cls_label].squeeze(1)
+                fused_lstm_h_t[cls_inds] = multi_traj_lstm_hidden_states[cls_label][0]
+
+            # fused_lstm_h_t = self.traj_lstm_fusion(unfused_lstm_h_t)
+            traj_lstm_hidden_states.append(fused_lstm_h_t)
+
+
+        for i, input_t in enumerate(
+            obs_traj_rel[: self.obs_len].chunk(
+                obs_traj_rel[: self.obs_len].size(0), dim=0
+            )
+        ):
+            # traj_lstm_h_t, traj_lstm_c_t = self.traj_lstm_model(
+            #     input_t.squeeze(0), (traj_lstm_h_t, traj_lstm_c_t)
+            # )
+
+            fused_lstm_h_t = torch.zeros(
+                (cls_labels.shape[0], self.traj_lstm_hidden_size)
+            ).cuda()
+
+            for cls_label in range(self.n_classes):
+                # check if current traj_lstm_model is needed
+                if cls_label not in classes_inds.keys():
+                    continue
+
+                input_t = input_t.squeeze(0)
+                input_t_cls = input_t[cls_labels.squeeze(1) == cls_label, :]
+                multi_traj_lstm_hidden_states[cls_label] = self.traj_lstm_models[
+                    cls_label
+                ](input_t_cls, multi_traj_lstm_hidden_states[cls_label])
+                cls_inds = classes_inds[cls_label].squeeze(1)
+                fused_lstm_h_t[cls_inds] = multi_traj_lstm_hidden_states[cls_label][0]
+
+            # fused_lstm_h_t = self.traj_lstm_fusion(unfused_lstm_h_t)
+            traj_lstm_hidden_states.append(fused_lstm_h_t)
+
+            if training_step == 1:
+                # output = self.traj_hidden2pos(traj_lstm_h_t)
+                output = self.traj_hidden2pos(fused_lstm_h_t)
+                pred_traj_rel += [output]
+            else:
+                # traj_lstm_hidden_states += [traj_lstm_h_t]
+                traj_lstm_hidden_states.append(fused_lstm_h_t)
+
+        # TEST: cGAN
+        cls_embedding = self.cls_encoder(cls_labels)
+        cls_embeddings = torch.stack([cls_embedding] * len(traj_lstm_hidden_states))
+        gat_input = torch.stack(traj_lstm_hidden_states)
+        gat_input = torch.cat([gat_input, cls_embeddings], dim=-1)
+
+        if training_step == 2:
+            # graph_lstm_input = self.gatencoder(
+            #     torch.stack(traj_lstm_hidden_states), seq_start_end
+            # )
+            graph_lstm_input = self.gatencoder(gat_input, seq_start_end)
+
+            for i in range(self.obs_len):
+                graph_lstm_h_t, graph_lstm_c_t = self.graph_lstm_model(
+                    graph_lstm_input[i], (graph_lstm_h_t, graph_lstm_c_t)
+                )
+                encoded_before_noise_hidden = torch.cat(
+                    (traj_lstm_hidden_states[i], graph_lstm_h_t), dim=1
+                )
+                output = self.traj_gat_hidden2pos(encoded_before_noise_hidden)
+                pred_traj_rel += [output]
+
+        if training_step == 3:
+            # graph_lstm_input = self.gatencoder(
+            #     torch.stack(traj_lstm_hidden_states), seq_start_end
+            # )
+            graph_lstm_input = self.gatencoder(gat_input, seq_start_end)
+
+            for i, input_t in enumerate(
+                graph_lstm_input[: self.obs_len].chunk(
+                    graph_lstm_input[: self.obs_len].size(0), dim=0
+                )
+            ):
+                graph_lstm_h_t, graph_lstm_c_t = self.graph_lstm_model(
+                    input_t.squeeze(0), (graph_lstm_h_t, graph_lstm_c_t)
+                )
+                graph_lstm_hidden_states += [graph_lstm_h_t]
+
+        if training_step == 1 or training_step == 2:
+            return torch.stack(pred_traj_rel)
+        else:
+            encoded_before_noise_hidden = torch.cat(
+                (traj_lstm_hidden_states[-1], graph_lstm_hidden_states[-1]), dim=1
+            )
+            pred_lstm_hidden = self.add_noise(
+                encoded_before_noise_hidden, seq_start_end
+            )
+            pred_lstm_c_t = torch.zeros_like(pred_lstm_hidden).cuda()
+            output = obs_traj_rel[self.obs_len-1]
+            if self.training:
+                for i, input_t in enumerate(
+                    obs_traj_rel[-self.pred_len :].chunk(
+                        obs_traj_rel[-self.pred_len :].size(0), dim=0
+                    )
+                ):
+                    teacher_force = random.random() < teacher_forcing_ratio
+                    input_t = input_t if teacher_force else output.unsqueeze(0)
+                    pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
+                        input_t.squeeze(0), (pred_lstm_hidden, pred_lstm_c_t)
+                    )
+                    output = self.pred_hidden2pos(pred_lstm_hidden)
+                    pred_traj_rel += [output]
+                outputs = torch.stack(pred_traj_rel)
+            else:
+                for i in range(self.pred_len):
+                    pred_lstm_hidden, pred_lstm_c_t = self.pred_lstm_model(
+                        output, (pred_lstm_hidden, pred_lstm_c_t)
+                    )
+                    output = self.pred_hidden2pos(pred_lstm_hidden)
+                    pred_traj_rel += [output]
+                outputs = torch.stack(pred_traj_rel)
+            return outputs
 
 
 class TrajectoryDiscriminator(nn.Module):

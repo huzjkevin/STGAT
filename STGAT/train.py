@@ -1,5 +1,7 @@
 import argparse
 import logging
+import datetime
+import yaml
 import os
 import random
 import shutil
@@ -7,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+# from optim_utils import Optim
 from torch.utils.tensorboard import SummaryWriter
 
 import utils
@@ -42,6 +45,7 @@ parser.add_argument(
     "--traj_lstm_input_size", type=int, default=2, help="traj_lstm_input_size"
 )
 parser.add_argument("--traj_lstm_hidden_size", default=32, type=int)
+parser.add_argument("--cls_embedding_dim", default=16, type=int)
 
 parser.add_argument(
     "--heads", type=str, default="4,1", help="Heads in each layer, splitted with comma"
@@ -102,6 +106,21 @@ best_ade = 100
 
 
 def main(args):
+    curr_time = datetime.datetime.now()
+    output_dir = f"exp_{args.dataset_name}_{curr_time.strftime('%Y%m%d%H%M%S')}"
+    os.makedirs(output_dir, exist_ok=True)
+
+    checkpoint_dir = os.path.join(output_dir, f"checkpoint_{args.dataset_name}")
+    if os.path.exists(checkpoint_dir) is False:
+        os.mkdir(checkpoint_dir)
+
+    # keep track of console outputs and experiment settings
+    utils.set_logger(os.path.join(output_dir, args.log_dir, f"train_{args.dataset_name}.log"))
+    config_file = open(os.path.join(output_dir, f"config_{args.dataset_name}.yaml"), "w")
+    yaml.dump(args, config_file)
+    tensorboard_dir = os.path.join(output_dir, "tensorboard")
+    writer = SummaryWriter(tensorboard_dir)
+
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -110,7 +129,7 @@ def main(args):
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
     train_path = get_dset_path(args.dataset_name, "train")
-    val_path = get_dset_path(args.dataset_name, "test")
+    val_path = get_dset_path(args.dataset_name, "train")
 
     logging.info("Initializing train dataset")
     train_dset, train_loader = data_loader(args, train_path)
@@ -120,7 +139,7 @@ def main(args):
     writer = SummaryWriter()
 
     n_units = (
-        [args.traj_lstm_hidden_size]
+        [args.traj_lstm_hidden_size + args.cls_embedding_dim]
         + [int(x) for x in args.hidden_units.strip().split(",")]
         + [args.graph_lstm_hidden_size]
     )
@@ -137,35 +156,26 @@ def main(args):
         dropout=args.dropout,
         alpha=args.alpha,
         graph_lstm_hidden_size=args.graph_lstm_hidden_size,
+        cls_embedding_dim=args.cls_embedding_dim,
         noise_dim=args.noise_dim,
         noise_type=args.noise_type,
     )
     model.cuda()
-    # optimizer = optim.Adam(
-    #     [
-    #         {"params": model.traj_lstm_model.parameters(), "lr": 1e-2},
-    #         {"params": model.traj_hidden2pos.parameters()},
-    #         {"params": model.gatencoder.parameters(), "lr": 3e-2},
-    #         {"params": model.graph_lstm_model.parameters(), "lr": 1e-2},
-    #         {"params": model.traj_gat_hidden2pos.parameters()},
-    #         {"params": model.pred_lstm_model.parameters()},
-    #         {"params": model.pred_hidden2pos.parameters()},
-    #     ],
-    #     lr=args.lr,
-    # )
-
     optimizer = optim.Adam(
         [
-            {"params": model.encoder.traj_lstm_model.parameters(), "lr": 1e-2},
-            # {"params": model.traj_hidden2pos.parameters()},
-            {"params": model.encoder.gatencoder.parameters(), "lr": 3e-2},
-            {"params": model.encoder.graph_lstm_model.parameters(), "lr": 1e-2},
-            # {"params": model.traj_gat_hidden2pos.parameters()},
-            {"params": model.decoder.pred_lstm_model.parameters()},
-            {"params": model.decoder.pred_hidden2pos.parameters()},
+            {"params": model.traj_lstm_models[0].parameters(), "lr": 1e-2},
+            {"params": model.traj_lstm_models[1].parameters(), "lr": 1e-2},
+            {"params": model.traj_lstm_models[2].parameters(), "lr": 1e-2},
+            {"params": model.traj_hidden2pos.parameters()},
+            {"params": model.gatencoder.parameters(), "lr": 3e-2},
+            {"params": model.graph_lstm_model.parameters(), "lr": 1e-2},
+            {"params": model.traj_gat_hidden2pos.parameters()},
+            {"params": model.pred_lstm_model.parameters()},
+            {"params": model.pred_hidden2pos.parameters()},
         ],
         lr=args.lr,
     )
+
     global best_ade
     if args.resume:
         if os.path.isfile(args.resume):
@@ -192,12 +202,13 @@ def main(args):
                 for param_group in optimizer.param_groups:
                     param_group["lr"] = 5e-3
             training_step = 3
-        training_step = 3
+        # training_step = 3
         train(args, model, train_loader, optimizer, epoch, training_step, writer)
         if training_step == 3:
             ade = validate(args, model, val_loader, epoch, writer)
             is_best = ade < best_ade
             best_ade = min(ade, best_ade)
+            ckpt_fname = os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar")
 
             save_checkpoint(
                 {
@@ -207,8 +218,9 @@ def main(args):
                     "optimizer": optimizer.state_dict(),
                 },
                 is_best,
-                f"./checkpoint_{args.dataset_name}/checkpoint{epoch}.pth.tar",
+                os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar"),
             )
+
     writer.close()
 
 
@@ -228,6 +240,7 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
             non_linear_ped,
             loss_mask,
             seq_start_end,
+            cls_labels
         ) = batch
         optimizer.zero_grad()
         loss = torch.zeros(1).to(pred_traj_gt)
@@ -237,7 +250,7 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
         if training_step == 1 or training_step == 2:
             model_input = obs_traj_rel
             pred_traj_fake_rel = model(
-                model_input, obs_traj, seq_start_end, 1, training_step
+                model_input, obs_traj, seq_start_end, cls_labels, 1, training_step
             )
             l2_loss_rel.append(
                 l2_loss(pred_traj_fake_rel, model_input, loss_mask, mode="raw")
@@ -245,7 +258,7 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
         else:
             model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
             for _ in range(args.best_k):
-                pred_traj_fake_rel = model(model_input, obs_traj, seq_start_end, 0)
+                pred_traj_fake_rel = model(model_input, obs_traj, seq_start_end, cls_labels, 0)
                 l2_loss_rel.append(
                     l2_loss(
                         pred_traj_fake_rel,
@@ -291,9 +304,10 @@ def validate(args, model, val_loader, epoch, writer):
                 non_linear_ped,
                 loss_mask,
                 seq_start_end,
+                cls_labels
             ) = batch
             loss_mask = loss_mask[:, args.obs_len :]
-            pred_traj_fake_rel = model(obs_traj_rel, obs_traj, seq_start_end)
+            pred_traj_fake_rel = model(obs_traj_rel, obs_traj, seq_start_end, cls_labels)
 
             pred_traj_fake_rel_predpart = pred_traj_fake_rel[-args.pred_len :]
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel_predpart, obs_traj[-1])
