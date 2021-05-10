@@ -161,7 +161,7 @@ def evaluate_helper(error, seq_start_end):
 
 def get_generator(checkpoint):
     n_units = (
-        [args.traj_lstm_hidden_size, args.cls_embedding_dim]
+        [args.traj_lstm_hidden_size + args.cls_embedding_dim]
         + [int(x) for x in args.hidden_units.strip().split(",")]
         + [args.graph_lstm_hidden_size]
     )

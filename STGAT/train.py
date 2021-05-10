@@ -110,12 +110,12 @@ def main(args):
     output_dir = f"exp_{args.dataset_name}_{curr_time.strftime('%Y%m%d%H%M%S')}"
     os.makedirs(output_dir, exist_ok=True)
 
-    checkpoint_dir = os.path.join(output_dir, f"checkpoint_{args.dataset_name}")
+    checkpoint_dir = os.path.join(output_dir, args.log_dir, f"checkpoint_{args.dataset_name}")
     if os.path.exists(checkpoint_dir) is False:
         os.mkdir(checkpoint_dir)
 
     # keep track of console outputs and experiment settings
-    utils.set_logger(os.path.join(output_dir, args.log_dir, f"train_{args.dataset_name}.log"))
+    utils.set_logger(os.path.join(output_dir, f"train_{args.dataset_name}.log"))
     config_file = open(os.path.join(output_dir, f"config_{args.dataset_name}.yaml"), "w")
     yaml.dump(args, config_file)
     tensorboard_dir = os.path.join(output_dir, "tensorboard")
@@ -344,8 +344,4 @@ def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    utils.set_logger(os.path.join(args.log_dir, f"train_{args.dataset_name}.log"))
-    checkpoint_dir = f"./checkpoint_{args.dataset_name}"
-    if os.path.exists(checkpoint_dir) is False:
-        os.mkdir(checkpoint_dir)
     main(args)

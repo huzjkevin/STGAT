@@ -1,6 +1,5 @@
 import argparse
 import os
-import random
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
@@ -17,18 +16,17 @@ from utils import (
     int_tuple,
     relative_to_abs,
     get_dset_path,
-    bool_flag
 )
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--log_dir", default="./", help="Directory containing logging file")
 
-parser.add_argument("--dataset_name", default="zara2", type=str)
+parser.add_argument("--dataset_name", default="trajectory_combined", type=str)
 parser.add_argument("--delim", default="\t")
 parser.add_argument("--loader_num_workers", default=4, type=int)
 parser.add_argument("--obs_len", default=8, type=int)
-parser.add_argument("--pred_len", default=8, type=int)
+parser.add_argument("--pred_len", default=12, type=int)
 parser.add_argument("--skip", default=1, type=int)
 
 parser.add_argument("--seed", type=int, default=72, help="Random seed.")
@@ -66,13 +64,13 @@ parser.add_argument("--num_samples", default=20, type=int)
 
 
 parser.add_argument(
-    "--dropout", type=float, default=0, help="Dropout rate (1 - keep probability)."
+    "--dropout", type=float, default=0.2, help="Dropout rate (1 - keep probability)."
 )
 parser.add_argument(
     "--alpha", type=float, default=0.2, help="Alpha for the leaky_relu."
 )
 
-parser.add_argument("--dset_type", default="test", type=str)
+parser.add_argument("--dset_type", default="train", type=str)
 
 
 parser.add_argument(
@@ -82,71 +80,6 @@ parser.add_argument(
     metavar="PATH",
     help="path to latest checkpoint (default: none)",
 )
-
-# =================================================================
-
-# parser.add_argument("--log_dir", default="./", help="Directory containing logging file")
-# parser.add_argument("--verbose", action="store_true")
-
-# parser.add_argument("--dataset_name", default="zara2", type=str)
-# parser.add_argument("--delim", default="\t")
-# parser.add_argument("--loader_num_workers", default=4, type=int)
-# parser.add_argument("--obs_len", default=8, type=int)
-# parser.add_argument("--pred_len", default=12, type=int)
-# parser.add_argument("--skip", default=1, type=int)
-
-# parser.add_argument("--seed", type=int, default=72, help="Random seed.")
-# parser.add_argument("--batch_size", default=64, type=int)
-# parser.add_argument("--num_epochs", default=200, type=int)
-
-# parser.add_argument("--noise_dim", default=(16,), type=int_tuple)
-# parser.add_argument("--noise_type", default="gaussian")
-
-# parser.add_argument(
-#     "--traj_lstm_input_size", type=int, default=2, help="traj_lstm_input_size"
-# )
-# parser.add_argument("--traj_lstm_hidden_size", default=32, type=int)
-
-# parser.add_argument(
-#     "--heads", type=str, default="4,1", help="Heads in each layer, splitted with comma"
-# )
-# parser.add_argument(
-#     "--hidden-units",
-#     type=str,
-#     default="16",
-#     help="Hidden units in each hidden layer, splitted with comma",
-# )
-# parser.add_argument(
-#     "--graph_network_out_dims",
-#     type=int,
-#     default=32,
-#     help="dims of every node after through GAT module",
-# )
-# parser.add_argument("--graph_lstm_hidden_size", default=32, type=int)
-
-# parser.add_argument(
-#     "--dropout", type=float, default=0, help="Dropout rate (1 - keep probability)."
-# )
-# parser.add_argument(
-#     "--alpha", type=float, default=0.2, help="Alpha for the leaky_relu."
-# )
-
-# parser.add_argument("--batch_norm", default=0, type=bool_flag)
-# parser.add_argument("--mlp_dim", default=512, type=int)
-
-# parser.add_argument("--best_k", default=20, type=int)
-# parser.add_argument("--use_gpu", default=1, type=int)
-# parser.add_argument("--gpu_num", default="0", type=str)
-# parser.add_argument("--dset_type", default="test", type=str)
-# parser.add_argument("--num_samples", default=20, type=int)
-
-# parser.add_argument(
-#     "--resume",
-#     default="",
-#     type=str,
-#     metavar="PATH",
-#     help="path to latest checkpoint (default: none)",
-# )
 
 
 def evaluate_helper(error, seq_start_end, model_output_traj, model_output_traj_best):
@@ -186,8 +119,6 @@ def get_generator(checkpoint):
         noise_type=args.noise_type,
     )
     model.load_state_dict(checkpoint["state_dict"])
-    # model.load_state_dict(checkpoint["state_g"])
-
     model.cuda()
     model.eval()
     return model
@@ -329,10 +260,8 @@ def main(args):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    random.seed(args.seed)
-    np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    os.makedirs(f"./traj_fig_{args.dataset_name}", exist_ok=True)
+    os.mkdir(f"./traj_fig_{args.dataset_name}")
     main(args)

@@ -2,9 +2,12 @@ from torch import optim
 
 
 class Optim:
-    def __init__(self, model, cfg):
+    def __init__(self, model, cfg=None, default_lr=1e-3):
         self.optimizer = optim.Adam(model.parameters(), amsgrad=True)
-        self.lr_scheduler = ExpDecayScheduler(**cfg)
+        if cfg is not None:
+            self.lr_scheduler = ExpDecayScheduler(**cfg)
+        else:
+            self.lr_scheduler = ConstantScheduler(default_lr)
 
     def zero_grad(self):
         self.optimizer.zero_grad()
@@ -24,6 +27,16 @@ class Optim:
 
     def get_lr(self):
         return self.optimizer.param_groups[0]["lr"]
+
+    def set_scheduler(self, scheduler_name, params=None):
+        if scheduler_name == "exp":
+            assert params is not None, "Need configuration for exponential scheduler!"
+            self.lr_scheduler = ExpDecayScheduler(**params)
+        elif scheduler_name == "const":
+            assert params is not None, "invalid lr for constant scheduler"
+            self.lr_scheduler = ConstantScheduler(params)
+        else:
+            raise NotImplementedError
 
 
 class ExpDecayScheduler:
@@ -48,3 +61,10 @@ class ExpDecayScheduler:
             return self.lr0 * (self.lr1 / self.lr0) ** (
                 (epoch - self.epoch0) / (self.epoch1 - self.epoch0)
             )
+
+class ConstantScheduler:
+    def __init__(self, lr):
+        self.lr = lr
+
+    def __call__(self):
+        return self.lr
