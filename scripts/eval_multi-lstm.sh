@@ -15,5 +15,5 @@ python ./STGAT/draw_trajectory.py \
   --alpha 0.2 \
   --batch_size 64 \
   --resume "exp_trajectory_combined_cls_20210510081836/checkpoint_trajectory_combined_cls_model_best.pth.tar" \
-  --dset_type train \
+  --dset_type test \
   --num_samples 20 \
