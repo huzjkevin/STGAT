@@ -461,8 +461,8 @@ def train_gan(
         tb_dict["G_discriminator_loss_epoch"].append(losses_g["G_discriminator_loss"])
         tb_dict["G_total_loss_epoch"].append(losses_g["G_total_loss"])
         tb_dict["D_total_loss_epoch"].append(losses_d["D_total_loss"])
-        log_writer.add_scalar("lr_g", optimizer_g.get_lr(), batch_idx)
-        log_writer.add_scalar("lr_d", optimizer_d.get_lr(), batch_idx)
+        log_writer.add_scalar("lr_g", optimizer_g.get_lr(), epoch * len(train_loader) + batch_idx)
+        log_writer.add_scalar("lr_d", optimizer_d.get_lr(), epoch * len(train_loader) + batch_idx)
 
         # print training info to console and log
         if batch_idx % args.print_every == 0 and args.verbose:

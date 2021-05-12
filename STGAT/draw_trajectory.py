@@ -70,7 +70,7 @@ parser.add_argument(
     "--alpha", type=float, default=0.2, help="Alpha for the leaky_relu."
 )
 
-parser.add_argument("--dset_type", default="train", type=str)
+parser.add_argument("--dset_type", default="test", type=str)
 
 
 parser.add_argument(

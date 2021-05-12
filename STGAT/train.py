@@ -8,8 +8,8 @@ import shutil
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
-# from optim_utils import Optim
+# import torch.optim as optim
+from optim_utils import Optim
 from torch.utils.tensorboard import SummaryWriter
 
 import utils
@@ -129,7 +129,7 @@ def main(args):
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
     train_path = get_dset_path(args.dataset_name, "train")
-    val_path = get_dset_path(args.dataset_name, "train")
+    val_path = get_dset_path(args.dataset_name, "test")
 
     logging.info("Initializing train dataset")
     train_dset, train_loader = data_loader(args, train_path)
@@ -161,20 +161,22 @@ def main(args):
         noise_type=args.noise_type,
     )
     model.cuda()
-    optimizer = optim.Adam(
-        [
-            {"params": model.traj_lstm_models[0].parameters(), "lr": 1e-2},
-            {"params": model.traj_lstm_models[1].parameters(), "lr": 1e-2},
-            {"params": model.traj_lstm_models[2].parameters(), "lr": 1e-2},
-            {"params": model.traj_hidden2pos.parameters()},
-            {"params": model.gatencoder.parameters(), "lr": 3e-2},
-            {"params": model.graph_lstm_model.parameters(), "lr": 1e-2},
-            {"params": model.traj_gat_hidden2pos.parameters()},
-            {"params": model.pred_lstm_model.parameters()},
-            {"params": model.pred_hidden2pos.parameters()},
-        ],
-        lr=args.lr,
-    )
+    # optimizer = optim.Adam(
+    #     [
+    #         {"params": model.traj_lstm_models[0].parameters(), "lr": 1e-2},
+    #         {"params": model.traj_lstm_models[1].parameters(), "lr": 1e-2},
+    #         {"params": model.traj_lstm_models[2].parameters(), "lr": 1e-2},
+    #         {"params": model.traj_hidden2pos.parameters()},
+    #         {"params": model.gatencoder.parameters(), "lr": 3e-2},
+    #         {"params": model.graph_lstm_model.parameters(), "lr": 1e-2},
+    #         {"params": model.traj_gat_hidden2pos.parameters()},
+    #         {"params": model.pred_lstm_model.parameters()},
+    #         {"params": model.pred_hidden2pos.parameters()},
+    #     ],
+    #     lr=args.lr,
+    # )
+
+    optimizer = Optim(model, default_lr=args.lr)
 
     global best_ade
     if args.resume:
@@ -199,8 +201,10 @@ def main(args):
             training_step = 2
         else:
             if epoch == 250:
-                for param_group in optimizer.param_groups:
-                    param_group["lr"] = 5e-3
+                # for param_group in optimizer.param_groups:
+                #     param_group["lr"] = 5e-3
+                optimizer_cfg = {"epoch0": 250, "epoch1": args.num_epochs, "lr0": 5e-3, "lr1": 1e-5}
+                optimizer.set_scheduler(scheduler_name="exp", params=optimizer_cfg)
             training_step = 3
         # training_step = 3
         train(args, model, train_loader, optimizer, epoch, training_step, writer)
@@ -218,7 +222,7 @@ def main(args):
                     "optimizer": optimizer.state_dict(),
                 },
                 is_best,
-                os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar"),
+                ckpt_fname,
             )
 
     writer.close()
@@ -226,8 +230,9 @@ def main(args):
 
 def train(args, model, train_loader, optimizer, epoch, training_step, writer):
     losses = utils.AverageMeter("Loss", ":.6f")
+    learning_rate = utils.AverageMeter("lr", ":.6f")
     progress = utils.ProgressMeter(
-        len(train_loader), [losses], prefix="Epoch: [{}]".format(epoch)
+        len(train_loader), [losses, learning_rate], prefix="Epoch: [{}]".format(epoch)
     )
     model.train()
     for batch_idx, batch in enumerate(train_loader):
@@ -242,7 +247,11 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
             seq_start_end,
             cls_labels
         ) = batch
+
+        ratio = batch_idx / len(train_loader)
+        optimizer.set_lr(epoch + ratio)
         optimizer.zero_grad()
+
         loss = torch.zeros(1).to(pred_traj_gt)
         l2_loss_rel = []
         loss_mask = loss_mask[:, args.obs_len :]
@@ -280,11 +289,14 @@ def train(args, model, train_loader, optimizer, epoch, training_step, writer):
 
         loss += l2_loss_sum_rel
         losses.update(loss.item(), obs_traj.shape[1])
+        learning_rate.reset()
+        learning_rate.update(optimizer.get_lr())
         loss.backward()
         optimizer.step()
         if batch_idx % args.print_every == 0:
             progress.display(batch_idx)
     writer.add_scalar("train_loss", losses.avg, epoch)
+    writer.add_scalar("learning_rate", optimizer.get_lr(), epoch)
 
 
 def validate(args, model, val_loader, epoch, writer):

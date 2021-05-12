@@ -6,8 +6,10 @@ class Optim:
         self.optimizer = optim.Adam(model.parameters(), amsgrad=True)
         if cfg is not None:
             self.lr_scheduler = ExpDecayScheduler(**cfg)
+            self.scheduler_name = "exp"
         else:
             self.lr_scheduler = ConstantScheduler(default_lr)
+            self.scheduler_name = "const"
 
     def zero_grad(self):
         self.optimizer.zero_grad()
@@ -22,8 +24,12 @@ class Optim:
         self.optimizer.load_state_dict(state_dict)
 
     def set_lr(self, epoch):
-        for group in self.optimizer.param_groups:
-            group["lr"] = self.lr_scheduler(epoch)
+        if self.scheduler_name == "exp":
+            for group in self.optimizer.param_groups:
+                group["lr"] = self.lr_scheduler(epoch)
+        else:
+            for group in self.optimizer.param_groups:
+                group["lr"] = self.lr_scheduler()
 
     def get_lr(self):
         return self.optimizer.param_groups[0]["lr"]
@@ -32,9 +38,11 @@ class Optim:
         if scheduler_name == "exp":
             assert params is not None, "Need configuration for exponential scheduler!"
             self.lr_scheduler = ExpDecayScheduler(**params)
+            self.scheduler_name = "exp"
         elif scheduler_name == "const":
             assert params is not None, "invalid lr for constant scheduler"
             self.lr_scheduler = ConstantScheduler(params)
+            self.scheduler_name = "const"
         else:
             raise NotImplementedError
 

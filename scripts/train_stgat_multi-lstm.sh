@@ -14,7 +14,7 @@ python ./STGAT/train.py \
   --dropout 0 \
   --alpha 0.2 \
   --batch_size 64 \
-  --num_epochs 1000 \
+  --num_epochs 400 \
   --best_k 20 \
   --gpu_num 0 \
   --lr 1e-3 \
