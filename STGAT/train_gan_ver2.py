@@ -125,8 +125,12 @@ def main(args):
         os.mkdir(checkpoint_dir)
 
     # keep track of console outputs and experiment settings
-    utils.set_logger(os.path.join(output_dir, args.log_dir, f"train_{args.dataset_name}.log"))
-    config_file = open(os.path.join(output_dir, f"config_{args.dataset_name}.yaml"), "w")
+    utils.set_logger(
+        os.path.join(output_dir, args.log_dir, f"train_{args.dataset_name}.log")
+    )
+    config_file = open(
+        os.path.join(output_dir, f"config_{args.dataset_name}.yaml"), "w"
+    )
     yaml.dump(args, config_file)
     tensorboard_dir = os.path.join(output_dir, "tensorboard")
     writer = SummaryWriter(tensorboard_dir)
@@ -139,7 +143,7 @@ def main(args):
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
     train_path = get_dset_path(args.dataset_name, "train")
-    val_path = get_dset_path(args.dataset_name, "train")
+    val_path = get_dset_path(args.dataset_name, "test")
 
     logging.info("Initializing train dataset\n")
     train_dset, train_loader = data_loader(args, train_path)
@@ -190,9 +194,19 @@ def main(args):
     discriminator.cuda()
 
     # configure a exponential decay lr scheduler
-    optimizer_g_cfg = {"epoch0": 0, "epoch1": args.num_epochs, "lr0": args.g_lr0, "lr1": args.g_lr1}
+    optimizer_g_cfg = {
+        "epoch0": 250,
+        "epoch1": args.num_epochs,
+        "lr0": args.g_lr0,
+        "lr1": args.g_lr1,
+    }
     optimizer_g = Optim(generator, optimizer_g_cfg)
-    optimizer_d_cfg = {"epoch0": 0, "epoch1": args.num_epochs, "lr0": args.d_lr0, "lr1": args.d_lr1}
+    optimizer_d_cfg = {
+        "epoch0": 250,
+        "epoch1": args.num_epochs,
+        "lr0": args.d_lr0,
+        "lr1": args.d_lr1,
+    }
     optimizer_d = Optim(discriminator, optimizer_d_cfg)
 
     # optimizer_g = optim.Adam(
@@ -236,7 +250,15 @@ def main(args):
         else:
             logging.info("=> no checkpoint found at '{}'".format(args.resume))
 
+    training_step = 1
     for epoch in range(args.start_epoch, args.num_epochs + 1):
+        if epoch < 150:
+            training_step = 1
+        elif epoch < 250:
+            training_step = 2
+        else:
+            training_step = 3
+
         train_gan(
             args,
             generator,
@@ -247,44 +269,54 @@ def main(args):
             epoch,
             gan_g_loss,
             gan_d_loss,
+            training_step,
             log_writer=writer,
         )
 
-        save_ckpt = epoch % args.ckpt_interval == 0
-        val_epoch = epoch % args.val_interval == 0
-        ckpt_state = {
-            "epoch": epoch + 1,
-            "state_g": generator.state_dict(),
-            "state_d": discriminator.state_dict(),
-            "best_ade": best_ade,
-            "optimizer_g": optimizer_g.state_dict(),
-            "optimizer_d": optimizer_d.state_dict(),
-        }
+        if training_step == 3:
+            save_ckpt = epoch % args.ckpt_interval == 0
+            val_epoch = epoch % args.val_interval == 0
+            ckpt_state = {
+                "epoch": epoch + 1,
+                "state_g": generator.state_dict(),
+                "state_d": discriminator.state_dict(),
+                "best_ade": best_ade,
+                "optimizer_g": optimizer_g.state_dict(),
+                "optimizer_d": optimizer_d.state_dict(),
+            }
 
-        if val_epoch:
-            ade = validate(args, generator, val_loader, epoch, writer)
-            is_best = ade < best_ade
-            best_ade = min(ade, best_ade)
-            ckpt_fname = os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar")
-            save_checkpoint(
-                ckpt_state,
-                save_ckpt,
-                is_best,
-                os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar"),
-            )
-        elif save_ckpt:
-            save_checkpoint(
-                ckpt_state,
-                save_ckpt,
-                is_best,
-                os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar"),
-            )
+            if val_epoch:
+                ade = validate(args, generator, val_loader, epoch, writer)
+                is_best = ade < best_ade
+                best_ade = min(ade, best_ade)
+                ckpt_fname = os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar")
+                save_checkpoint(
+                    ckpt_state,
+                    save_ckpt,
+                    is_best,
+                    os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar"),
+                )
+            elif save_ckpt:
+                save_checkpoint(
+                    ckpt_state,
+                    save_ckpt,
+                    is_best,
+                    os.path.join(checkpoint_dir, f"checkpoint{epoch}.pth.tar"),
+                )
 
     writer.close()
 
 
 def train_generator(
-    args, batch, generator, discriminator, optimizer_g, g_loss_fn, epoch, ratio
+    args,
+    batch,
+    generator,
+    discriminator,
+    optimizer_g,
+    g_loss_fn,
+    epoch,
+    ratio,
+    training_step,
 ):
     """[Train one batch for generator]
 
@@ -324,19 +356,28 @@ def train_generator(
     loss_mask = loss_mask[:, args.obs_len :]
 
     # generator part
-    model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
-    for _ in range(args.best_k):
+    if training_step != 3:
+        model_input = obs_traj_rel
         pred_traj_fake_rel = generator(
-            model_input, obs_traj, seq_start_end, cls_labels, 0
+            model_input, obs_traj, seq_start_end, cls_labels, training_step, 0
         )
         l2_loss_rel.append(
-            l2_loss(
-                pred_traj_fake_rel,
-                model_input[-args.pred_len :],
-                loss_mask,
-                mode="raw",
-            )
+            l2_loss(pred_traj_fake_rel, model_input, loss_mask, mode="raw")
         )
+    else:
+        model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
+        for _ in range(args.best_k):
+            pred_traj_fake_rel = generator(
+                model_input, obs_traj, seq_start_end, cls_labels, training_step, 0
+            )
+            l2_loss_rel.append(
+                l2_loss(
+                    pred_traj_fake_rel,
+                    model_input[-args.pred_len :],
+                    loss_mask,
+                    mode="raw",
+                )
+            )
 
     l2_loss_sum_rel = torch.zeros(1).to(pred_traj_gt)
     l2_loss_rel = torch.stack(l2_loss_rel, dim=1)
@@ -351,14 +392,15 @@ def train_generator(
     loss += l2_loss_sum_rel
     losses["G_l2_loss"] = l2_loss_sum_rel.item()
 
-    # discriminator part
-    traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
-    scores_fake = discriminator(traj_fake_rel, obs_traj, seq_start_end, cls_labels)
-    discriminator_loss = g_loss_fn(scores_fake)
+    if training_step == 3:
+        # discriminator part
+        traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
+        scores_fake = discriminator(traj_fake_rel, obs_traj, seq_start_end, cls_labels)
+        discriminator_loss = g_loss_fn(scores_fake)
 
-    loss += discriminator_loss
-    losses["G_discriminator_loss"] = discriminator_loss.item()
-    losses["G_total_loss"] = loss.item()
+        loss += discriminator_loss
+        losses["G_discriminator_loss"] = discriminator_loss.item()
+        losses["G_total_loss"] = loss.item()
 
     # losses.update(loss.item(), obs_traj.shape[1])
     loss.backward()
@@ -396,14 +438,25 @@ def train_discriminator(
 
     # generator part
     model_input = torch.cat((obs_traj_rel, pred_traj_gt_rel), dim=0)
-    pred_traj_fake_rel = generator(model_input, obs_traj, seq_start_end, cls_labels, 0)
+    pred_traj_fake_rel = generator(
+        model_input,
+        obs_traj,
+        seq_start_end,
+        cls_labels,
+        training_step=3,
+        teacher_forcing_ratio=0,
+    )
 
     # discriminator part
     traj_real_rel = torch.cat([obs_traj_rel, pred_traj_gt_rel], dim=0)
     traj_fake_rel = torch.cat([obs_traj_rel, pred_traj_fake_rel], dim=0)
 
-    scores_fake = discriminator(traj_fake_rel, obs_traj, seq_start_end, cls_labels)
-    scores_real = discriminator(traj_real_rel, obs_traj, seq_start_end, cls_labels)
+    scores_fake = discriminator(
+        traj_fake_rel, obs_traj, seq_start_end, cls_labels
+    )
+    scores_real = discriminator(
+        traj_real_rel, obs_traj, seq_start_end, cls_labels
+    )
 
     # Compute loss with optional gradient penalty
     data_loss = d_loss_fn(scores_real, scores_fake)
@@ -429,6 +482,7 @@ def train_gan(
     epoch,
     g_loss_fn,
     d_loss_fn,
+    training_step,
     log_writer=None,
 ):
     # losses_g = utils.AverageMeter("Generator loss", ":.6f")
@@ -450,19 +504,41 @@ def train_gan(
     for batch_idx, batch in enumerate(train_loader):
         ratio = batch_idx / len(train_loader)
         batch = [tensor.cuda() for tensor in batch]
+
         losses_g = train_generator(
-            args, batch, generator, discriminator, optimizer_g, g_loss_fn, epoch, ratio
-        )
-        losses_d = train_discriminator(
-            args, batch, generator, discriminator, optimizer_d, d_loss_fn, epoch, ratio
+            args,
+            batch,
+            generator,
+            discriminator,
+            optimizer_g,
+            g_loss_fn,
+            epoch,
+            ratio,
+            training_step,
         )
 
         tb_dict["G_l2_loss_epoch"].append(losses_g["G_l2_loss"])
-        tb_dict["G_discriminator_loss_epoch"].append(losses_g["G_discriminator_loss"])
-        tb_dict["G_total_loss_epoch"].append(losses_g["G_total_loss"])
-        tb_dict["D_total_loss_epoch"].append(losses_d["D_total_loss"])
         log_writer.add_scalar("lr_g", optimizer_g.get_lr(), batch_idx)
-        log_writer.add_scalar("lr_d", optimizer_d.get_lr(), batch_idx)
+
+        if training_step == 3:
+            losses_d = train_discriminator(
+                args,
+                batch,
+                generator,
+                discriminator,
+                optimizer_d,
+                d_loss_fn,
+                epoch,
+                ratio,
+            )
+
+            tb_dict["G_discriminator_loss_epoch"].append(
+                losses_g["G_discriminator_loss"]
+            )
+            tb_dict["G_total_loss_epoch"].append(losses_g["G_total_loss"])
+            tb_dict["D_total_loss_epoch"].append(losses_d["D_total_loss"])
+
+            log_writer.add_scalar("lr_d", optimizer_d.get_lr(), batch_idx)
 
         # print training info to console and log
         if batch_idx % args.print_every == 0 and args.verbose:
@@ -471,9 +547,11 @@ def train_gan(
                 logging.info("  [G] {}: {:.3f}".format(k, v))
             logging.info(f"  [G] batch learning rate: {optimizer_g.get_lr()}")
 
-            for k, v in sorted(losses_d.items()):
-                logging.info("  [D] {}: {:.3f}".format(k, v))
-            logging.info(f"  [D] batch learning rate: {optimizer_d.get_lr()}")
+            if training_step == 3:
+                for k, v in sorted(losses_d.items()):
+                    logging.info("  [D] {}: {:.3f}".format(k, v))
+                logging.info(f"  [D] batch learning rate: {optimizer_d.get_lr()}")
+
             logging.info("")
 
     if args.verbose:
@@ -482,13 +560,15 @@ def train_gan(
             logging.info(f"  {k}: {sum(v) / len(v)}")
 
         logging.info(f"  [G] batch learning rate: {optimizer_g.get_lr()}")
-        logging.info(f"  [D] batch learning rate: {optimizer_d.get_lr()}")
+        if training_step == 3:
+            logging.info(f"  [D] batch learning rate: {optimizer_d.get_lr()}")
 
         logging.info(f"**Train epoch: {epoch} end**\n")
     else:
-        logging.info(
-            f"Train epoch {epoch}: G_l2_loss_epoch {sum(tb_dict['G_l2_loss_epoch']) / len(tb_dict['G_l2_loss_epoch'])} | lr_g / lr_d: {optimizer_g.get_lr()} / {optimizer_d.get_lr()}"
-        )
+        msg = f"Train epoch {epoch}: G_l2_loss_epoch {sum(tb_dict['G_l2_loss_epoch']) / len(tb_dict['G_l2_loss_epoch'])} | lr_g: {optimizer_g.get_lr()}"
+        if training_step == 3:
+            msg += f" / lr_d: {optimizer_d.get_lr()}"
+        logging.info(msg)
 
 
 # def train(args, model, train_loader, optimizer, epoch, training_step, writer):
@@ -576,7 +656,7 @@ def validate(args, generator, val_loader, epoch, writer):
 
             loss_mask = loss_mask[:, args.obs_len :]
             pred_traj_fake_rel = generator(
-                obs_traj_rel, obs_traj, seq_start_end, cls_labels
+                obs_traj_rel, obs_traj, seq_start_end, cls_labels, training_step=3
             )
 
             pred_traj_fake_rel_predpart = pred_traj_fake_rel[-args.pred_len :]

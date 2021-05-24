@@ -192,7 +192,7 @@ def main(args):
                 for param_group in optimizer.param_groups:
                     param_group["lr"] = 5e-3
             training_step = 3
-        training_step = 3
+            
         train(args, model, train_loader, optimizer, epoch, training_step, writer)
         if training_step == 3:
             ade = validate(args, model, val_loader, epoch, writer)
