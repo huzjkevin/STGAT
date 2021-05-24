@@ -491,12 +491,17 @@ def train_gan(
     #     len(train_loader), [losses], prefix="Epoch: [{}]".format(epoch)
     # )
 
-    tb_dict = {
-        "G_l2_loss_epoch": [],
-        "G_discriminator_loss_epoch": [],
-        "G_total_loss_epoch": [],
-        "D_total_loss_epoch": [],
-    }
+    if training_step == 3:
+        tb_dict = {
+            "G_l2_loss_epoch": [],
+            "G_discriminator_loss_epoch": [],
+            "G_total_loss_epoch": [],
+            "D_total_loss_epoch": [],
+        }
+    else:
+        tb_dict = {
+            "G_l2_loss_epoch": []
+        }
 
     if args.verbose:
         logging.info(f"**Train epoch: {epoch} start**")
