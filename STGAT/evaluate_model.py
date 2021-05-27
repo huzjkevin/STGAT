@@ -71,6 +71,12 @@ parser.add_argument(
     "--alpha", type=float, default=0.2, help="Alpha for the leaky_relu."
 )
 
+parser.add_argument("--batch_norm", default=0, type=bool_flag)
+parser.add_argument("--mlp_dim", default=512, type=int)
+
+parser.add_argument("--best_k", default=20, type=int)
+parser.add_argument("--use_gpu", default=1, type=int)
+parser.add_argument("--gpu_num", default="0", type=str)
 parser.add_argument("--dset_type", default="test", type=str)
 
 
@@ -181,7 +187,7 @@ def get_generator(checkpoint):
         noise_dim=args.noise_dim,
         noise_type=args.noise_type,
     )
-    model.load_state_dict(checkpoint["state_dict"])
+    model.load_state_dict(checkpoint["state_g"])
     model.cuda()
     model.eval()
     return model
@@ -215,7 +221,7 @@ def evaluate(args, loader, generator):
 
             for _ in range(args.num_samples):
                 pred_traj_fake_rel = generator(
-                    obs_traj_rel, obs_traj, seq_start_end, cls_labels, 0, 3
+                    obs_traj_rel, obs_traj, seq_start_end, cls_labels, 3, 0
                 )
                 pred_traj_fake_rel = pred_traj_fake_rel[-args.pred_len :]
 
