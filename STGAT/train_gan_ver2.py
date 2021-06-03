@@ -150,7 +150,12 @@ def main(args):
     logging.info("Initializing val dataset\n")
     _, val_loader = data_loader(args, val_path)
 
-    n_units = (
+    n_units_g = (
+        [args.traj_lstm_hidden_size * 2 * 3 + args.cls_embedding_dim]  # TEST: cgan
+        + [int(x) for x in args.hidden_units.strip().split(",")]
+        + [args.graph_lstm_hidden_size]
+    )
+    n_units_d = (
         [args.traj_lstm_hidden_size + args.cls_embedding_dim]  # TEST: cgan
         + [int(x) for x in args.hidden_units.strip().split(",")]
         + [args.graph_lstm_hidden_size]
@@ -162,7 +167,7 @@ def main(args):
         pred_len=args.pred_len,
         traj_lstm_input_size=args.traj_lstm_input_size,
         traj_lstm_hidden_size=args.traj_lstm_hidden_size,
-        n_units=n_units,
+        n_units=n_units_g,
         n_heads=n_heads,
         graph_network_out_dims=args.graph_network_out_dims,
         dropout=args.dropout,
@@ -179,7 +184,7 @@ def main(args):
         pred_len=args.pred_len,
         traj_lstm_input_size=args.traj_lstm_input_size,
         traj_lstm_hidden_size=args.traj_lstm_hidden_size,
-        n_units=n_units,
+        n_units=n_units_d,
         n_heads=n_heads,
         graph_network_out_dims=args.graph_network_out_dims,
         graph_lstm_hidden_size=args.graph_lstm_hidden_size,
@@ -258,7 +263,7 @@ def main(args):
             training_step = 2
         else:
             training_step = 3
-
+        training_step = 3
         train_gan(
             args,
             generator,
