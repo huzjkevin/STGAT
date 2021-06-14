@@ -177,9 +177,9 @@ class TrajectoryDataset(Dataset):
                     seq_list_rel.append(curr_seq_rel[:num_peds_considered])
                     seq_in_scene.append(curr_seq_rel[:num_peds_considered])
 
-  
-            means.append(np.vstack(seq_in_scene).mean((0, 2)))
-            stds.append(np.vstack(seq_in_scene).std((0, 2)))
+            if len(seq_in_scene) > 0:
+                means.append(np.vstack(seq_in_scene).mean((0, 2)))
+                stds.append(np.vstack(seq_in_scene).std((0, 2)))
 
         self.num_seq = len(seq_list)
         seq_list = np.concatenate(seq_list, axis=0)

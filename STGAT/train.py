@@ -34,7 +34,7 @@ parser.add_argument("--log_dir", default="./", help="Directory containing loggin
 
 parser.add_argument("--dataset_name", default="trajectory_combined", type=str)
 parser.add_argument("--delim", default="\t")
-parser.add_argument("--loader_num_workers", default=4, type=int)
+parser.add_argument("--loader_num_workers", default=16, type=int)
 parser.add_argument("--obs_len", default=8, type=int)
 parser.add_argument("--pred_len", default=12, type=int)
 parser.add_argument("--skip", default=1, type=int)
