@@ -2,35 +2,42 @@ import argparse
 import os
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+import random
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
 plt.style.use("seaborn-dark")
+import scipy
+import torch
+
+from transformer.batch import subsequent_mask
+import utils
 from data.loader import data_loader
 from models import TrajectoryGenerator
 from utils import (
     displacement_error,
     final_displacement_error,
-    l2_loss,
-    int_tuple,
-    relative_to_abs,
     get_dset_path,
+    int_tuple,
+    l2_loss,
+    relative_to_abs,
 )
+import individual_TF
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--log_dir", default="./", help="Directory containing logging file")
 
-parser.add_argument("--dataset_name", default="zara2", type=str)
+parser.add_argument("--dataset_name", default="trajectory_combined", type=str)
 parser.add_argument("--delim", default="\t")
-parser.add_argument("--loader_num_workers", default=4, type=int)
+parser.add_argument("--loader_num_workers", default=16, type=int)
 parser.add_argument("--obs_len", default=8, type=int)
 parser.add_argument("--pred_len", default=8, type=int)
 parser.add_argument("--skip", default=1, type=int)
 
 parser.add_argument("--seed", type=int, default=72, help="Random seed.")
-parser.add_argument("--batch_size", default=64, type=int)
+parser.add_argument("--batch_size", default=32, type=int)
 
 parser.add_argument("--noise_dim", default=(16,), type=int_tuple)
 parser.add_argument("--noise_type", default="gaussian")
@@ -74,12 +81,14 @@ parser.add_argument("--dset_type", default="test", type=str)
 
 parser.add_argument(
     "--resume",
-    default="./model_best.pth.tar",
+    default="checkpoint_trajectory_combined_model_best.pth.tar",
     type=str,
     metavar="PATH",
     help="path to latest checkpoint (default: none)",
 )
 
+warmup = 10
+emb_size = 512
 
 def evaluate_helper(error, seq_start_end, model_output_traj, model_output_traj_best):
     error = torch.stack(error, dim=1)
@@ -102,19 +111,17 @@ def get_generator(checkpoint):
         + [args.graph_lstm_hidden_size]
     )
     n_heads = [int(x) for x in args.heads.strip().split(",")]
-    model = TrajectoryGenerator(
-        obs_len=args.obs_len,
-        pred_len=args.pred_len,
-        traj_lstm_input_size=args.traj_lstm_input_size,
-        traj_lstm_hidden_size=args.traj_lstm_hidden_size,
-        n_units=n_units,
-        n_heads=n_heads,
-        graph_network_out_dims=args.graph_network_out_dims,
-        dropout=args.dropout,
-        alpha=args.alpha,
-        graph_lstm_hidden_size=args.graph_lstm_hidden_size,
-        noise_dim=args.noise_dim,
-        noise_type=args.noise_type,
+    model = individual_TF.IndividualTF(
+        2,
+        3,
+        3,
+        N=6,
+        d_model=emb_size,
+        d_ff=2048,
+        h=8,
+        dropout=0.1,
+        mean=[0, 0],
+        std=[0, 0],
     )
     model.load_state_dict(checkpoint["state_dict"])
     model.cuda()
@@ -129,6 +136,9 @@ def cal_ade_fde(pred_traj_gt, pred_traj_fake):
 
 
 def plot_trajectory(args, loader, generator):
+    mat = scipy.io.loadmat("norm.mat")
+    mean = torch.Tensor(mat["mean"]).cuda()
+    std = torch.Tensor(mat["std"]).cuda()
     ground_truth_input = []
     all_model_output_traj = []
     ground_truth_output = []
@@ -152,15 +162,37 @@ def plot_trajectory(args, loader, generator):
             model_output_traj_best = torch.ones_like(pred_traj_gt).cuda()
 
             for _ in range(args.num_samples):
-                pred_traj_fake_rel = generator(
-                    obs_traj_rel, obs_traj, seq_start_end, 0, 3
+                # for transformers
+                inp = (obs_traj_rel.permute(1, 0, 2)[:, 1:, :] - mean) / std
+                src_att = torch.ones((inp.shape[0], 1, inp.shape[1])).cuda()
+                start_of_seq = (
+                    torch.Tensor([0, 0, 1])
+                    .unsqueeze(0)
+                    .unsqueeze(1)
+                    .repeat(inp.shape[0], 1, 1)
+                    .cuda()
                 )
+                dec_inp = start_of_seq
+
+                for i in range(args.pred_len):
+                    trg_att = (
+                        subsequent_mask(dec_inp.shape[1])
+                        .repeat(dec_inp.shape[0], 1, 1)
+                        .cuda()
+                    )
+                    out = generator(inp, dec_inp, src_att, trg_att)
+                    dec_inp = torch.cat((dec_inp, out[:, -1:, :]), 1)
+
+                preds_tr_b = dec_inp[:, 1:, 0:2] * std + mean
+                pred_traj_fake_rel = preds_tr_b.permute(1, 0, 2)
+                pred_traj_fake_rel = pred_traj_fake_rel[:, :, 0:2]
                 pred_traj_fake_rel = pred_traj_fake_rel[-args.pred_len :]
 
                 pred_traj_fake = relative_to_abs(pred_traj_fake_rel, obs_traj[-1])
                 model_output_traj.append(pred_traj_fake)
                 ade_, fde_ = cal_ade_fde(pred_traj_gt, pred_traj_fake)
                 ade.append(ade_)
+
             model_output_traj_best = evaluate_helper(
                 ade, seq_start_end, model_output_traj, model_output_traj_best
             )
@@ -247,6 +279,11 @@ def plot_trajectory(args, loader, generator):
 
 
 def main(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     checkpoint = torch.load(args.resume)
     generator = get_generator(checkpoint)
     path = get_dset_path(args.dataset_name, args.dset_type)

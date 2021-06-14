@@ -5,5 +5,5 @@
         "titleBar.activeForeground": "#FEFCFD"
     },
     "python.formatting.provider": "black",
-    "python.pythonPath": "/media/remote_home/zhu/anaconda3/envs/stgat/bin/python"
+    "python.pythonPath": "/home/kevin/anaconda3/envs/kevin/bin/python"
 }

@@ -41,7 +41,7 @@ parser.add_argument("--skip", default=1, type=int)
 
 parser.add_argument("--seed", type=int, default=72, help="Random seed.")
 parser.add_argument("--batch_size", default=32, type=int)
-parser.add_argument("--num_epochs", default=200, type=int)
+parser.add_argument("--num_epochs", default=1000, type=int)
 parser.add_argument("--val_interval", default=5, type=int)
 
 parser.add_argument("--noise_dim", default=(16,), type=int_tuple)
@@ -138,21 +138,6 @@ def main(args):
     warmup = 10
     emb_size = 512
 
-    # model = TrajectoryGenerator(
-    #     obs_len=args.obs_len,
-    #     pred_len=args.pred_len,
-    #     traj_lstm_input_size=args.traj_lstm_input_size,
-    #     traj_lstm_hidden_size=args.traj_lstm_hidden_size,
-    #     n_units=n_units,
-    #     n_heads=n_heads,
-    #     graph_network_out_dims=args.graph_network_out_dims,
-    #     dropout=args.dropout,
-    #     alpha=args.alpha,
-    #     graph_lstm_hidden_size=args.graph_lstm_hidden_size,
-    #     noise_dim=args.noise_dim,
-    #     noise_type=args.noise_type,
-    # )
-
     model = individual_TF.IndividualTF(
         2,
         3,
@@ -165,12 +150,7 @@ def main(args):
         mean=[0, 0],
         std=[0, 0],
     )
-
     model.cuda()
-    # optimizer = optim.Adam(
-    #     model.parameters(),
-    #     lr=args.lr,
-    # )
 
     optimizer = NoamOpt(
         emb_size,
@@ -262,33 +242,7 @@ def train(args, model, train_loader, optimizer, epoch, dataset_stats, writer):
             subsequent_mask(dec_inp.shape[1]).repeat(dec_inp.shape[0], 1, 1).cuda()
         )
 
-        # model_input = obs_traj_rel
-        # pred_traj_fake_rel = model(
-        #     model_input, obs_traj, seq_start_end, 1, training_step
-        # )
-
         pred = model(inp, dec_inp, src_att, trg_att)
-
-        # loss = F.pairwise_distance(pred[:, :,0:2].contiguous().view(-1, 2), ((pred_traj_gt_rel - mean) / std).contiguous().view(-1, 2)).mean() + torch.mean(torch.abs(pred[:,:,2]))
-        # l2_loss_rel.append(loss)
-
-        # l2_loss_rel.append(
-        #     l2_loss(pred_traj_fake_rel[:, :, 0:2], pred_traj_gt, loss_mask, mode="raw")
-        # )
-
-        # l2_loss_sum_rel = torch.zeros(1).to(pred_traj_gt)
-        # l2_loss_rel = torch.stack(l2_loss_rel, dim=1)
-        # for start, end in seq_start_end.data:
-        #     _l2_loss_rel = torch.narrow(l2_loss_rel, 0, start, end - start)
-        #     _l2_loss_rel = torch.sum(_l2_loss_rel, dim=0)  # [20]
-        #     _l2_loss_rel = torch.min(_l2_loss_rel) / (
-        #         (pred_traj_fake_rel.shape[0]) * (end - start)
-        #     )
-        #     l2_loss_sum_rel += _l2_loss_rel
-
-        # loss += l2_loss_sum_rel
-        # losses.update(loss.item(), obs_traj.shape[1])
-
         loss = (
             F.pairwise_distance(
                 pred[:, :, 0:2].contiguous().view(-1, 2),
@@ -306,7 +260,7 @@ def train(args, model, train_loader, optimizer, epoch, dataset_stats, writer):
         )
         epoch_loss += loss.item()
 
-    # writer.add_scalar("train_loss", losses.avg, epoch)
+    logging.info(f"\n Train loss epoch {epoch}: {epoch_loss / len(train_loader)} \n")
     writer.add_scalar("train_loss", epoch_loss / len(train_loader), epoch)
 
 
@@ -353,14 +307,9 @@ def validate(args, model, val_loader, epoch, dataset_stats, writer):
                 out = model(inp, dec_inp, src_att, trg_att)
                 dec_inp = torch.cat((dec_inp, out[:, -1:, :]), 1)
 
-            # model_input = obs_traj_rel
-            # pred_traj_fake_rel = model(
-            #     model_input, obs_traj, seq_start_end, 1, training_step
-            # )
             preds_tr_b = dec_inp[:, 1:, 0:2] * std + mean
             pred_traj_fake_rel = preds_tr_b.permute(1, 0, 2)
             pred_traj_fake_rel = pred_traj_fake_rel[:, :, 0:2]
-            # pred_traj_fake_rel = model(obs_traj_rel, obs_traj, seq_start_end)
 
             pred_traj_fake_rel_predpart = pred_traj_fake_rel[-args.pred_len :]
             pred_traj_fake = relative_to_abs(pred_traj_fake_rel_predpart, obs_traj[-1])
