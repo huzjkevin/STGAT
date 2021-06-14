@@ -12,3 +12,5 @@ runs/
 traj_fig*
 traj*
 **/*.txt
+test*
+*.mat

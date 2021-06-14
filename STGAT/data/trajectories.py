@@ -120,6 +120,10 @@ class TrajectoryDataset(Dataset):
         seq_list_rel = []
         loss_mask_list = []
         non_linear_ped = []
+
+        # for transformers
+        means = []
+        stds = []
         for path in all_files:
             data = read_file(path, delim)
             frames = np.unique(data[:, 0]).tolist()
@@ -128,6 +132,7 @@ class TrajectoryDataset(Dataset):
                 frame_data.append(data[frame == data[:, 0], :])
             num_sequences = int(math.ceil((len(frames) - self.seq_len + 1) / skip))
 
+            seq_in_scene = []
             for idx in range(0, num_sequences * self.skip + 1, skip):
                 if path == "/home/kq708907/Projects/STGAT/STGAT/datasets/trajectory_vehicle/train/traj_scene-0246.txt" and idx == 14:
                     print("debug")
@@ -170,6 +175,11 @@ class TrajectoryDataset(Dataset):
                     loss_mask_list.append(curr_loss_mask[:num_peds_considered])
                     seq_list.append(curr_seq[:num_peds_considered])
                     seq_list_rel.append(curr_seq_rel[:num_peds_considered])
+                    seq_in_scene.append(curr_seq_rel[:num_peds_considered])
+
+  
+            means.append(np.vstack(seq_in_scene).mean((0, 2)))
+            stds.append(np.vstack(seq_in_scene).std((0, 2)))
 
         self.num_seq = len(seq_list)
         seq_list = np.concatenate(seq_list, axis=0)
@@ -190,6 +200,13 @@ class TrajectoryDataset(Dataset):
         self.pred_traj_rel = torch.from_numpy(seq_list_rel[:, :, self.obs_len :]).type(
             torch.float
         )
+
+        # for transformers
+        means = np.vstack(means)
+        stds = np.vstack(stds)
+        self.mean = torch.from_numpy(means).type(torch.float).mean(0)
+        self.std = torch.from_numpy(stds).type(torch.float).mean(0)
+
         self.loss_mask = torch.from_numpy(loss_mask_list).type(torch.float)
         self.non_linear_ped = torch.from_numpy(non_linear_ped).type(torch.float)
         cum_start_idx = [0] + np.cumsum(num_peds_in_seq).tolist()
